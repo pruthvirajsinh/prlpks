@@ -1,0 +1,19 @@
+# Overview
+
+SKS is a synchronizing public key server, which functions as a directory service
+for OpenPGP keys. This charm can be used to deploy a standalone server or a
+peering cluster of SKS instances.
+
+# Installation
+
+To deploy this charm you will need at a minimum: a cloud environment, working
+Juju installation and a successful bootstrap. Once bootstrapped, deploy this
+SKS charm with:
+
+juju deploy sks
+
+The service will automatically expose ports 11370 and 11371 when started.
+
+Add an SKS peer with:
+
+juju add-unit sks

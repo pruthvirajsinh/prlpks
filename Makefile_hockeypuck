@@ -1,0 +1,37 @@
+
+VERSION="0.0.1 prc pre alpha"
+
+all: compile
+
+compile:
+	GOPATH=$(shell pwd)/build go install -ldflags "-X github.com/pruthvirajsinh/prlpks.Version ${VERSION}" github.com/pruthvirajsinh/prlpks/cmd/prlpks
+	make -C doc
+
+build:
+	GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
+
+fmt:
+	gofmt -w=true ./...
+
+debs: debbin debsrc
+
+debsrc: debbin clean
+	debuild -S -k0x879CF8AA8DDA301A
+
+debbin: freeze-build
+	debuild -us -uc -i -b
+
+freeze-build:
+	GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
+
+
+clean:
+	rm -rf build/bin build/pkg
+
+src-clean:
+	rm -rf build
+
+pkg-clean:
+	rm -f ../prlpks_*.deb ../prlpks_*.dsc ../prlpks_*.changes ../prlpks_*.build ../prlpks_*.tar.gz 
+
+.PHONY: all compile fmt debs debsrc debbin freeze-build clean src-clean pkg-clean build

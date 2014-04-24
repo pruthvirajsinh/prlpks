@@ -1,0 +1,2 @@
+---
+- local_action: shell mkdir -p dumps || true
