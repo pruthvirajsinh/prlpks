@@ -9,3 +9,4 @@ github.com/pelletier/go-toml	git	2ba6587bf359b35209f71f6602cdf6be99ba3497
 github.com/pruthvirajsinh/symflux	git	69f1692a51a2b09ba3a98b0e82c492a8909d4f69	
 github.com/pruthvirajsinh/PrcIdSigner	git	314bb68c2fe493bbc1f35898aa101a7366c12a75	
 github.com/pruthvirajsinh/go-Simap	git	78f21bfccf2ecdeebd45394ff445cbbff3f24b1a	
+github.com/juju/errgo	git	0d8e45693362cad43ccf8af5467dc1bf508aa9b4	
