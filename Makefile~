@@ -7,6 +7,7 @@ all: compile
 
 compile:
 	GOPATH=$(shell pwd)/build go install -ldflags "-X github.com/pruthvirajsinh/prlpks.Version ${VERSION}" github.com/pruthvirajsinh/prlpks/cmd/prlpks
+	make -C doc
 
 build:
 	GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
