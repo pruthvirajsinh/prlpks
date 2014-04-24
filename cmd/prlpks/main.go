@@ -115,7 +115,7 @@ func (c *helpCmd) Main() {
 	fmt.Fprintln(os.Stderr, `PRLPKS - OpenPGP Synchronized Key Server with Deletion
 Copyright (c) 2014 Pruthvirajsinh Rajendrasinh Chauhan
 
-PRLPKS is based heavily on prlpks(https://github.com/pruthvirajsinh/prlpks) by Casey Marshall, copyright 2013(GNU GPL v3).
+PRLPKS is based heavily on hockeypuck(https://launchpad.net/hockeypuck) by Casey Marshall, copyright 2013(GNU GPL v3).
 
 Basic commands:
 `)
