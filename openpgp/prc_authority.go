@@ -87,30 +87,30 @@ func GetExplicitAuths(email string) (err error) {
 		return
 	}
 
-	var exAuths []ExplicitAuth
+	var exAuth ExplicitAuth
 
-	err = json.Unmarshal([]byte(str), &exAuths)
+	err = json.Unmarshal([]byte(str), &exAuth)
 	if err != nil {
 		return
 	}
 	found := false
-	for _, excAuth := range exAuths {
-		for _, excEmail := range excAuth.Emails {
-			//First do simple matching,If no match then do regexp matching.
-			if email == excEmail {
-				found = true
-				break
-			}
-			//Do regexp matching
-			found, err = regexp.MatchString(excEmail, email)
-			if err != nil {
-				continue
-			}
-			if found {
-				break
-			}
+
+	for _, excEmail := range exAuth.Emails {
+		//First do simple matching,If no match then do regexp matching.
+		if email == excEmail {
+			found = true
+			break
+		}
+		//Do regexp matching
+		found, err = regexp.MatchString(excEmail, email)
+		if err != nil {
+			continue
+		}
+		if found {
+			break
 		}
 	}
+
 	if found {
 		return
 	} else {
