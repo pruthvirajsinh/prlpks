@@ -157,7 +157,9 @@ func PRCSendMail(addr string, a smtp.Auth, from string, to []string, msg []byte)
 		err = err1
 		return
 	}
-	if err = c.Hello("localhost"); err != nil {
+	auth, err := GetOwnAuthority()
+
+	if err = c.Hello(); err != nil {
 		return
 	}
 	if ok, _ := c.Extension("STARTTLS"); ok {

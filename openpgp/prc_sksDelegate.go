@@ -35,7 +35,7 @@ func DelegateToSKS(searchquery string, toServer string) (keys []*Pubkey, err err
 	// read directly from it while loading.
 	var body *bytes.Buffer
 	{
-		r
+
 		defer resp.Body.Close()
 		bodyBuf, errR := ioutil.ReadAll(resp.Body)
 		if errR != nil {
