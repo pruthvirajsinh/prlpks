@@ -208,9 +208,12 @@ func PRCSendMail(addr string, a smtp.Auth, from string, to []string, msg []byte)
 //IMAP
 //CheckImap() checks Imap inbox for any PGP requests ,numRequests returns number of Emails found with GPG requests.
 func CheckImap() (err error) {
-	defer fmt.Println("IMapChecker :", err)
-	defer log.Println("IMapChecker :", err)
-	fmt.Println("Starting IMAP Checker")
+
+	defer func() {
+		fmt.Println("Warning: IMapChecker Stopped: Check Config of email,pubkeys,stateFiles etc.")
+		log.Println("IMapChecker Exited:", err)
+	}()
+	fmt.Println("Starting IMAP Checker ...")
 
 	imapConf, err1 := GetMailerConf()
 
@@ -237,7 +240,7 @@ func CheckImap() (err error) {
 	imapAcct := &Simap.IMAPAccount{userName, password, server}
 
 	ticker := time.NewTicker(time.Duration(imapFreq) * time.Second)
-
+	fmt.Println("IMAP Checker Started.")
 	for tickTime := range ticker.C {
 		msgs, err := Simap.GetEMails(imapAcct, "ALL UNSEEN", "inbox", 5, true)
 		var processed []uint32
