@@ -2,13 +2,14 @@
 package openpgp
 
 import (
-	//"encoding/json"
+	"encoding/json"
 	"errors"
 	//	"io"
 	//	"io/ioutil"
 	//	"os"
 	"log"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 	//	"time"
@@ -61,63 +62,60 @@ func GetAuthForAllDomains(remoteStatesInJSON string) (authsForDomains []AuthForD
 	for _, authsFrDom := range rmtAuthsForDom {
 		authsForDomains = append(authsForDomains, authsFrDom)
 	}
-	/*
-		str, err1 := GetFileContentsFromConfig("authority.AuthForDomainFile")
-		if err1 != nil {
-			err = err1
-			return
-		}
 
-		var authorities []Authority
-		err = json.Unmarshal([]byte(str), &authorities)
-		if err != nil {
-			return
-		}
-		for _, authority := range authorities {
-			pubKeyPath := authority.AsciiPubKeyOfAuth
-			if pubKeyPath != "" {
-				pubKeyBytes, err1 := ioutil.ReadFile(pubKeyPath)
-				if err1 != nil {
-					err = err1
-					return
-				}
-				authority.AsciiPubKeyOfAuth = string(pubKeyBytes)
-			}
-			for _, domn := range authority.DomainsUnderAuth {
-				authsForDomains = append(authsForDomains, AuthForDomain{domain: domn, authority: authority})
-			}
-		}
-
-									decoder := json.NewDecoder(file)
-					for {
-
-						if err = decoder.Decode(&authority); err == io.EOF {
-							break
-						} else if err != nil {
-							return
-						}
-						//Set Actual ASCII pub key from file
-						pubKeyPath := authority.AsciiPubKeyOfAuth
-						if pubKeyPath != "" {
-							pubKeyBytes, err1 := ioutil.ReadFile(pubKeyPath)
-							if err1 != nil {
-								err = err1
-								return
-							}
-							authority.AsciiPubKeyOfAuth = string(pubKeyBytes)
-						}
-						for _, domn := range authority.DomainsUnderAuth {
-							authsForDomains = append(authsForDomains, AuthForDomain{domain: domn, authority: authority})
-						}
-
-					}
-				}
-			} else {
-				err = errors.New("Error while accessing AuthForDomain Json File")
-				return
-			}
-	*/
 	return
+}
+
+type ExplicitAuth struct {
+	Emails []string //Emails that we are explicitly authorizing ourselves to handle.
+}
+
+func GetExplicitAuths(email string) (err error) {
+	defer func() {
+		if err != nil {
+			log.Println(" Explicit Auth Verification for ", email, " failed: ", err)
+		}
+	}()
+	//1.Read JSON
+	//2.Get expAuth Struct object
+	//3.single and regular Expression
+	//4.Verify return err or nil
+
+	str, err1 := GetFileContentsFromConfig("authority.ExplicitAuthFile")
+	if err1 != nil {
+		err = err1
+		return
+	}
+
+	var exAuths []ExplicitAuth
+
+	err = json.Unmarshal([]byte(str), &exAuths)
+	if err != nil {
+		return
+	}
+	found := false
+	for _, excAuth := range exAuths {
+		for _, excEmail := range excAuth.Emails {
+			//First do simple matching,If no match then do regexp matching.
+			if email == excEmail {
+				found = true
+				break
+			}
+			//Do regexp matching
+			found, err = regexp.MatchString(excEmail, email)
+			if found {
+				break
+			}
+		}
+	}
+	if found {
+		return
+	} else {
+		err = errors.New("Not in our authority")
+		return
+	}
+	return
+
 }
 
 func GetAuthForDomain(domainKey string, remoteStatesInJSON string) (authority Authority, err error) {
@@ -215,7 +213,10 @@ func IsUnderAuth(publicKey Pubkey) (err error) {
 		}
 	}
 	if underAuth == false {
-		err = errors.New(msg)
+		err = GetExplicitAuths(email)
+		if err != nil {
+			err = errors.New(msg)
+		}
 		return
 	}
 	return
