@@ -1,0 +1,7 @@
+=============== Apr 25, 2014 (IST) ===============
+15:45:44.441582 db@open opening
+15:45:44.441703 journal@recovery F·1
+15:45:44.443478 journal@recovery recovering @1
+15:45:44.512557 mem@flush created L0@2 N·1 S·251B "\x00..\x00,v1":"\x00..\x00,v1"
+15:45:44.514175 db@janitor F·3 G·0
+15:45:44.514215 db@open done T·72.594283ms
