@@ -113,13 +113,13 @@ func (ast *AuthorizedState) VerifyState(asciiPubKey string) (err error) {
 		return
 	}
 	pubEntList := &openpgp.EntityList{&pubEnt}
-	//var signer *openpgp.Entity
-	_, err = openpgp.CheckArmoredDetachedSignature(pubEntList, &stateStrBuf, &sigBuf)
+	var signer *openpgp.Entity
+	signer, err = openpgp.CheckArmoredDetachedSignature(pubEntList, &stateStrBuf, &sigBuf)
 
 	if err == nil {
 		//fmt.Println("Verify:Signer Id = ", signer.Identities)
 	} else {
-		fmt.Println(err.Error())
+		fmt.Println("VerifyState:Signer Id = ", signer.Identities, "Error = ", err.Error())
 	}
 	return
 }

@@ -103,6 +103,9 @@ func GetExplicitAuths(email string) (err error) {
 			}
 			//Do regexp matching
 			found, err = regexp.MatchString(excEmail, email)
+			if err != nil {
+				continue
+			}
 			if found {
 				break
 			}

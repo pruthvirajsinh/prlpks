@@ -8,8 +8,8 @@ import (
 	"github.com/pruthvirajsinh/symflux/recon"
 	//"github.com/pruthvirajsinh/PrcIdSigner"
 	"bytes"
-	"io/ioutil"
 	"github.com/pruthvirajsinh/prlpks/hkp"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
@@ -32,12 +32,14 @@ func UpdateOwnLocalState() (err error) {
 	//TODO: If ColdBoot = true then always return timestamp=0
 	ownAuth, err1 := GetOwnAuthority()
 	if err1 != nil {
+		err = err1
 		return
 	}
 	ownSt, err1 := GetOwnCurrentState(ownAuth.HkpAddr)
 	if err1 != nil {
 		fmt.Println("Error while Getting OwnState for Own ", ownAuth.HkpAddr)
 		fmt.Println(err1)
+		err = err1
 		return
 	}
 
@@ -51,6 +53,7 @@ func UpdateOwnLocalState() (err error) {
 	if err1 != nil {
 		fmt.Println(err1)
 		fmt.Println("Error while Saving OwnState for Own ", ownAuth.HkpAddr)
+		err = err1
 		return
 	}
 	return
@@ -59,10 +62,11 @@ func UpdateOwnLocalState() (err error) {
 func GetAllStatesFromPeer(remoteAddr string) (allStates []AuthorizedState, err error) {
 	// Make an prc GetAllAuthStates Request
 
-	resp, err := http.Get(fmt.Sprintf("http://%s/prc/getAllStates", remoteAddr))
+	resp, errG := http.Get(fmt.Sprintf("http://%s/prc/getAllStates", remoteAddr))
 	//	"sks/hashquery"))
-	if err != nil {
+	if errG != nil {
 		fmt.Println("Error While Getting Response for")
+		err = errG
 		return
 	}
 	// Store response in memory. Connection may timeout if we
@@ -157,6 +161,7 @@ func SaveToLocalStates(state AuthorizedState, remoteStatesInJSON string) (err er
 	} else {
 		stateFile, err1 := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE, 0666)
 		if err1 != nil {
+			err = err1
 			return
 		}
 		stateFile.Close()
@@ -251,7 +256,7 @@ func (w *Worker) HandleAllStatesReq(allStatesReq *hkp.AllStatesReq) {
 	var allStatesRes []*AllStatesResult
 	localStates, err := GetLatestLocalStates()
 	if err != nil {
-		fmt.Println("HandleAllStateReq: Error While Getting AllStates")
+		fmt.Println("HandleAllStateReq: Error While Getting AllStates ", err)
 		return
 	}
 	allStatesRes = append(allStatesRes, &AllStatesResult{allStates: localStates})
@@ -280,6 +285,7 @@ func RecoveryAuthentication(remoteStatesInJSON string) (verifiedDomains []string
 			verifiedDomains = append(verifiedDomains, auth.domain)
 		} else {
 			fmt.Println("Updates for domain ", auth.domain, "is rejected")
+			err = verr
 		}
 	}
 	return
@@ -304,7 +310,7 @@ func verifyDomainForRecover(domain string, remoteStatesInJSON string) (err error
 	}
 	allLocalStates, err3 := GetLatestLocalStates()
 	if err3 != nil {
-		err = err2
+		err = err3
 		fmt.Println(err)
 		return
 	}
