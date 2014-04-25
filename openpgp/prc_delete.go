@@ -90,7 +90,7 @@ func (w *Worker) HandleDeleteReq(delReq *hkp.DeleteReq) {
 
 		if underAuth == false { //Check by explicit Auths
 			err = GetExplicitAuths(email1)
-			if err != nil {
+			if err == nil {
 				underAuth = true
 			}
 		}
