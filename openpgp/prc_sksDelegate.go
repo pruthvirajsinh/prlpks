@@ -28,14 +28,17 @@ func DelegateToSKS(searchquery string, toServer string) (keys []*Pubkey, err err
 		return
 	}
 
+	if resp.StatusCode == http.StatusNotFound {
+		return
+	}
 	// Store response in memory. Connection may timeout if we
 	// read directly from it while loading.
 	var body *bytes.Buffer
 	{
+		r
 		defer resp.Body.Close()
 		bodyBuf, errR := ioutil.ReadAll(resp.Body)
 		if errR != nil {
-			err = errR
 			return
 		}
 		body = bytes.NewBuffer(bodyBuf)
