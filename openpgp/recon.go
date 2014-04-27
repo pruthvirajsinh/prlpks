@@ -338,9 +338,10 @@ func (r *SksPeer) requestRecovered(rcvr *recon.Recover, elements *ZSet) (err err
 
 func (r *SksPeer) requestChunk(rcvr *recon.Recover, chunk []*Zp) (err error) {
 	//Get MappedDomains for authenticatioon of add
-	defer fmt.Println("Error While Returning from requestRecoverd", err)
+	//defer fmt.Println("Error While Returning from requestRecoverd", err)
 	verifiedDomains, errM := RecoveryAuthentication(rcvr.RemoteAllStatesJSON)
 	if errM != nil {
+		err = errM
 		return
 	}
 	fmt.Println("requestRecovered", verifiedDomains)
@@ -443,7 +444,7 @@ func (r *SksPeer) Stop() {
 
 func (r *SksPeer) deleteLocal(rcvr *recon.Recover, elements *ZSet) (err error) {
 
-	defer fmt.Println("Error While Returning from deleteLocal", err)
+	//defer fmt.Println("Error While Returning from deleteLocal", err)
 
 	items := elements.Items()
 	for len(items) > 0 {
@@ -470,7 +471,7 @@ func (r *SksPeer) deleteLocalChunk(rcvr *recon.Recover, chunk []*Zp) (err error)
 		return
 	}
 
-	//fmt.Println("deleteLocal", verifiedDomains)
+	fmt.Println("deleteLocal", verifiedDomains)
 
 	// Search keys from Local DB
 	hqBuf := bytes.NewBuffer(nil)

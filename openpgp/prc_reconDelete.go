@@ -291,10 +291,10 @@ func RecoveryAuthentication(remoteStatesInJSON string) (verifiedDomains []string
 	for _, auth := range allAuthsForDomain {
 		verr := verifyDomainForRecover(auth.domain, remoteStatesInJSON)
 		if verr == nil {
-			fmt.Println("Updates for domain ", auth.domain, "is accepted")
+			//fmt.Println("Updates for domain ", auth.domain, "is accepted")
 			verifiedDomains = append(verifiedDomains, auth.domain)
 		} else {
-			fmt.Println("Updates for domain ", auth.domain, "is rejected")
+			//fmt.Println("Updates for domain ", auth.domain, "is rejected")
 			//err = verr
 		}
 	}
