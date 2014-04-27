@@ -278,13 +278,15 @@ func (r *SksPeer) workRecovered(rcvr *recon.Recover, ready workRecoveredReady, w
 				continue
 			}
 
-			err := r.deleteLocal(rcvr, reconedSet.localDiff)
+			err = r.deleteLocal(rcvr, reconedSet.localDiff)
 			if err != nil {
 				log.Println(err)
+				fmt.Println("DeleteLOcal Returned:", err)
 			}
-			err1 := r.requestRecovered(rcvr, reconedSet.recovered)
-			if err1 != nil {
-				log.Println(err1)
+			err = r.requestRecovered(rcvr, reconedSet.recovered)
+			if err != nil {
+				log.Println(err)
+				fmt.Println("RequestRecovered Returned:", err)
 			}
 
 			fmt.Println("!")
@@ -336,12 +338,12 @@ func (r *SksPeer) requestRecovered(rcvr *recon.Recover, elements *ZSet) (err err
 
 func (r *SksPeer) requestChunk(rcvr *recon.Recover, chunk []*Zp) (err error) {
 	//Get MappedDomains for authenticatioon of add
-	//defer fmt.Println("Error While Returning from requestRecoverd", err)
+	defer fmt.Println("Error While Returning from requestRecoverd", err)
 	verifiedDomains, errM := RecoveryAuthentication(rcvr.RemoteAllStatesJSON)
 	if errM != nil {
 		return
 	}
-	//fmt.Println("requestRecovered", verifiedDomains)
+	fmt.Println("requestRecovered", verifiedDomains)
 
 	var remoteAddr string
 	remoteAddr, err = rcvr.HkpAddr()
@@ -368,14 +370,16 @@ func (r *SksPeer) requestChunk(rcvr *recon.Recover, chunk []*Zp) (err error) {
 			return err
 		}
 	}
-	//fmt.Println("Sending Hashquerry to ", remoteAddr, " for md5uuid= ", string(hqBuf.Bytes()))
-	if len(hqBuf.Bytes()) == 0 {
-		return
-	}
-	resp, err := http.Post(fmt.Sprintf("http://%s/pks/hashquery", remoteAddr),
+
+	//if len(hqBuf.Bytes()) == 0 {
+	//	return
+	//}
+	fmt.Println("Sending Hashquerry to ", remoteAddr, " for md5uuid= ", string(hqBuf.Bytes()))
+	resp, err1 := http.Post(fmt.Sprintf("http://%s/pks/hashquery", remoteAddr),
 		"sks/hashquery", bytes.NewReader(hqBuf.Bytes()))
-	if err != nil {
-		return err
+	if err1 != nil {
+		err = err1
+		return
 	}
 
 	// Store response in memory. Connection may timeout if we
@@ -439,7 +443,7 @@ func (r *SksPeer) Stop() {
 
 func (r *SksPeer) deleteLocal(rcvr *recon.Recover, elements *ZSet) (err error) {
 
-	//defer fmt.Println("Error While Returning from deleteLocal", err)
+	defer fmt.Println("Error While Returning from deleteLocal", err)
 
 	items := elements.Items()
 	for len(items) > 0 {
@@ -493,7 +497,7 @@ func (r *SksPeer) deleteLocalChunk(rcvr *recon.Recover, chunk []*Zp) (err error)
 		err = err1
 		return
 	}
-	//fmt.Println("Making HashQuerry to self for = ", string(hqBuf.Bytes()))
+	fmt.Println("Making HashQuerry to self for = ", string(hqBuf.Bytes()))
 	resp, err := http.Post(fmt.Sprintf("http://%s/pks/hashquery", ownAuth.HkpAddr),
 		"sks/hashquery", bytes.NewReader(hqBuf.Bytes()))
 	if err != nil {

@@ -253,7 +253,7 @@ func GetPksAuthTXTRecord(domain string) (pksAuth PksAuthTXT, err error) {
 	net.LookupAddr(domain)
 
 	for _, r := range txts {
-		log.Println("TXT of " + domain + " : " + r)
+		//log.Println("TXT of " + domain + " : " + r)
 		rcds := strings.Split(r, "=")
 		if len(rcds) != 2 {
 			log.Println("Not Found = in TXT Record of " + domain)

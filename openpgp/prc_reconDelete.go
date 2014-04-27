@@ -295,7 +295,7 @@ func RecoveryAuthentication(remoteStatesInJSON string) (verifiedDomains []string
 			verifiedDomains = append(verifiedDomains, auth.domain)
 		} else {
 			fmt.Println("Updates for domain ", auth.domain, "is rejected")
-			err = verr
+			//err = verr
 		}
 	}
 	return
@@ -372,36 +372,3 @@ func IsAuhtorized(email string, verifiedDomains []string) (isVerified bool) {
 	}
 	return false
 }
-
-/*
-	//PRC Start
-				fmt.Println("Reconing with ", remoteAddr)
-				ownSt, err1 := GetOwnCurrentState(remoteAddr)
-				if err1 != nil {
-					fmt.Println("Error while Getting OwnState for ", remoteAddr)
-					fmt.Println(err1)
-					return
-				}
-				err1 = SaveToLocalStates(ownSt)
-				if err1 != nil {
-					fmt.Println(err1)
-					fmt.Println("Error while Saving OwnState for ", remoteAddr)
-					return
-				}
-				//TODO: Find a way to make it non blocking,may be send remotestates to channel
-				fmt.Println("recon.go:Requesting States From Peer ", remoteAddr)
-
-				remoteStates, err2 := GetAllStatesFromPeer(rcvr)
-				if err2 != nil {
-					fmt.Println(err2)
-					fmt.Println("Error While Getting state from peer ", remoteAddr)
-				}
-				fmt.Println("recon.go:Got States From Peer")
-				remoteStatesJSON, err3 := WriteStatesToJSON(remoteStates)
-				if err3 != nil {
-					fmt.Println(err3)
-					fmt.Println("Error While Encoding States from peer ", remoteAddr)
-				}
-
-				rcvr.RemoteAllStatesJSON = remoteStatesJSON
-*/

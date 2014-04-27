@@ -41,10 +41,10 @@ copy-to-build:
 	mv -f ../build ./
 
 copy-www:
-	cp -fr instroot/var/lib/prlpks/www build/bin/
+	cp -fr $(shell pwd)/instroot/var/lib/prlpks/www $(shell pwd)/build/bin/ 
 
 
 pkg-clean:
 	rm -f ../prlpks_*.deb ../prlpks_*.dsc ../prlpks_*.changes ../prlpks_*.build ../prlpks_*.tar.gz 
 
-.PHONY: all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps require-godeps clean pkg-clean copy-to-build build copy-www
+.PHONY: copy-to-build all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps require-godeps clean pkg-clean build copy-www
