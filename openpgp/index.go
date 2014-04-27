@@ -255,8 +255,8 @@ func (r *IndexResponse) WriteTo(w http.ResponseWriter) error {
 		w.Header().Add("Content-Type", "text/html")
 		//PRC Start
 		if r.Delegated {
-			r.Msg = " Warning!! Key not found on PRL PKS. This keys were fetched from " + Config().GetStringDefault("authority.delegateAddress", "pool.sks-keyservers.net:11371") +
-				". This keys are not verified by PRL PKS,and hence the user has to verify the keys him self. "
+			r.Msg = " Warning!! Key not found on PRL PKS. These key/s were fetched from " + Config().GetStringDefault("authority.delegateAddress", "pool.sks-keyservers.net:11371") +
+				". These key/s are not verified by PRL PKS,and hence the users have to verify the keys themselves. "
 		}
 		//PRC End
 		r.Err = indexPageTmpl.Execute(w, r)

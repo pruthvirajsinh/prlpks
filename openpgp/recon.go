@@ -77,10 +77,12 @@ func (r *SksPeer) Start() {
 
 	//Added from latest hockeypuck,cleanly close the peer so that tree will be in consistent state.
 	sigChan := make(chan os.Signal)
-	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
 	go func() {
 		select {
-		case _ = <-sigChan:
+		case sig := <-sigChan:
+			log.Printf("captured %v, at %s stopping Peer..", sig, time.Now())
+			fmt.Printf("\nWarning!! Captured %v, at %s stopping Peer..\n", sig, time.Now())
 			r.Peer.Stop()
 		}
 	}()

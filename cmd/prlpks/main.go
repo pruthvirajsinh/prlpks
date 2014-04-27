@@ -23,11 +23,13 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime/pprof"
+	"time"
 
-	"launchpad.net/gnuflag"
 	. "github.com/pruthvirajsinh/prlpks"
+	"launchpad.net/gnuflag"
 )
 
 func die(err error) {
@@ -80,6 +82,21 @@ func main() {
 	if len(os.Args) > 2 {
 		cmdArgs = os.Args[2:]
 	}
+	//PRC Start
+	// capture ctrl+c and stop prlpks
+	//http://stackoverflow.com/questions/11268943/golang-is-it-possible-to-capture-a-ctrlc-signal-and-run-a-cleanup-function-in
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		for sig := range c {
+			log.Printf("captured %v, at %s stopping PRLPKS,CPU Profiler and exiting..", sig, time.Now())
+			fmt.Printf("\ncaptured %v, at %s stopping PRLPKS,CPU Profiler and exiting..\n", sig, time.Now())
+			pprof.StopCPUProfile()
+			os.Exit(1)
+		}
+	}()
+	//PRC End
+
 	var cpuProf bool
 	for _, cmd := range cmds {
 		if cmd.Name() == os.Args[1] {
