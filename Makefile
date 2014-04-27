@@ -26,7 +26,7 @@ debbin: freeze-build
 	debuild -us -uc -i -b
 
 freeze-build:
-	GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
+	#GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
 	GOPATH=$(shell pwd)/build make apply-godeps
 
 freeze-godeps: require-godeps
@@ -37,13 +37,13 @@ apply-godeps: require-godeps
 
 require-godeps:
 	#go get -u ${GODEPS}
-	#go install ${GODEPS}
+	go install ${GODEPS}
 
 clean:
 	rm -rf build/bin build/pkg
 
 src-clean:
-	rm -rf build
+	#rm -rf build
 
 pkg-clean:
 	rm -f ../prlpks_*.deb ../prlpks_*.dsc ../prlpks_*.changes ../prlpks_*.build ../prlpks_*.tar.gz 
@@ -53,5 +53,5 @@ copy-to-build:
 	cp -fr * ../build/src/github.com/pruthvirajsinh/prlpks/
 	mv -f ../build .
 
-.PHONY: all compile godeps fmt debs debsrc debbin apply-godeps require-godeps src-clean pkg-clean copy-to-build build
+.PHONY: copy-to-build all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps pkg-clean build
 #.PHONY: all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps apply-godeps require-godeps clean src-clean pkg-clean copy-to-build build
