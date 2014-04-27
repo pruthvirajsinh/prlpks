@@ -57,8 +57,7 @@ func DelegateToSKS(searchquery string, toServer string) (keys []*Pubkey, err err
 	// Check and decode the armor
 	armorBlock, errD := armor.Decode(body)
 	if errD != nil {
-		err = errD
-		fmt.Println("armor.decode", err)
+		log.Println("armor.decode", err)
 		return
 	}
 
