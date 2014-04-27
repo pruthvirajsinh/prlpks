@@ -36,6 +36,7 @@ clean:
 
 copy-to-build:
 	mv -f build ../
+	rm -fr ../build/src/github.com/pruthvirajsinh/prlpks/*
 	cp -fr * ../build/src/github.com/pruthvirajsinh/prlpks/
 	mv -f ../build ./
 
@@ -46,4 +47,4 @@ copy-www:
 pkg-clean:
 	rm -f ../prlpks_*.deb ../prlpks_*.dsc ../prlpks_*.changes ../prlpks_*.build ../prlpks_*.tar.gz 
 
-.PHONY: all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps require-godeps clean pkg-clean build copy-www
+.PHONY: all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps require-godeps clean pkg-clean copy-to-build build copy-www

@@ -15,9 +15,9 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/lib/pq"
 	"github.com/pruthvirajsinh/symflux"
 	"github.com/pruthvirajsinh/symflux/recon"
-	"github.com/lib/pq"
 	"launchpad.net/gnuflag"
 	"log"
 	"os"
@@ -172,7 +172,7 @@ func (ec *loadCmd) loadAllKeys(path string) {
 			}
 			underAuth := openpgp.IsUnderAuth(*keyRead.Pubkey)
 			if underAuth != nil {
-				fmt.Println("Load : " + underAuth.Error())
+				//fmt.Println("Load : " + underAuth.Error())
 				continue
 			}
 			//PRC End
