@@ -375,7 +375,7 @@ func (r *SksPeer) requestChunk(rcvr *recon.Recover, chunk []*Zp) (err error) {
 	//if len(hqBuf.Bytes()) == 0 {
 	//	return
 	//}
-	fmt.Println("Sending Hashquerry to ", remoteAddr, " for md5uuid= ", string(hqBuf.Bytes()))
+	//fmt.Println("Sending Hashquerry to ", remoteAddr, " for md5uuid= ", string(hqBuf.Bytes()))
 	resp, err1 := http.Post(fmt.Sprintf("http://%s/pks/hashquery", remoteAddr),
 		"sks/hashquery", bytes.NewReader(hqBuf.Bytes()))
 	if err1 != nil {
@@ -498,7 +498,7 @@ func (r *SksPeer) deleteLocalChunk(rcvr *recon.Recover, chunk []*Zp) (err error)
 		err = err1
 		return
 	}
-	fmt.Println("Making HashQuerry to self for = ", string(hqBuf.Bytes()))
+	//fmt.Println("Making HashQuerry to self for = ", string(hqBuf.Bytes()))
 	resp, err := http.Post(fmt.Sprintf("http://%s/pks/hashquery", ownAuth.HkpAddr),
 		"sks/hashquery", bytes.NewReader(hqBuf.Bytes()))
 	if err != nil {

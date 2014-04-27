@@ -36,12 +36,13 @@ clean:
 
 copy-to-build:
 	mv -f build ../
+	mkdir ../build/src/github.com/pruthvirajsinh/prlpks
 	rm -fr ../build/src/github.com/pruthvirajsinh/prlpks/*
 	cp -fr * ../build/src/github.com/pruthvirajsinh/prlpks/
 	mv -f ../build ./
 
 copy-www:
-	cp -fr $(shell pwd)/instroot/var/lib/prlpks/www $(shell pwd)/build/bin/ 
+	cp -fr instroot/var/lib/prlpks/www build/bin/ 
 
 
 pkg-clean:
