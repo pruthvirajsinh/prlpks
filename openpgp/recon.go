@@ -28,7 +28,9 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 	//	"github.com/pruthvirajsinh/PrcIdSigner"
 	"github.com/pruthvirajsinh/prlpks/hkp"
@@ -76,6 +78,17 @@ func NewSksPeer(s *hkp.Service) (*SksPeer, error) {
 
 func (r *SksPeer) Start() {
 	r.Peer.PrefixTree.Create()
+
+	//Added from latest hockeypuck,cleanly close the peer so that tree will be in consistent state
+	sigChan := make(chan os.Signal)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		select {
+		case _ = <-sigChan:
+			r.Peer.Stop()
+		}
+	}()
+
 	//PRC Start
 	if UpdateOwnLocalState() != nil {
 		fmt.Println("Error updating Own Local State")
