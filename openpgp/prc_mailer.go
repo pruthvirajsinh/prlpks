@@ -1,4 +1,14 @@
 // prc_mailer
+/*
+PRLPKS - OpenPGP Synchronized Key Server with Deletion
+Copyright (c) 2014 Pruthvirajsinh Rajendrasinh Chauhan
+
+PRLPKS is based heavily on hockeypuck(https://launchpad.net/hockeypuck) by Casey Marshall, copyright 2013(GNU GPL v3).
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+*/
 package openpgp
 
 import (
@@ -157,9 +167,21 @@ func PRCSendMail(addr string, a smtp.Auth, from string, to []string, msg []byte)
 		err = err1
 		return
 	}
-	auth, err := GetOwnAuthority()
+	//Get OwnAddress for hello.
+	ownAuth, errO := GetOwnAuthority()
+	if errO != nil {
+		err = errO
+		return
+	}
 
-	if err = c.Hello(); err != nil {
+	helloClientAddr, _, errSpl := net.SplitHostPort(ownAuth.HkpAddr)
+
+	if errSpl != nil {
+		err = errSpl
+		return
+	}
+
+	if err = c.Hello(helloClientAddr); err != nil {
 		return
 	}
 	if ok, _ := c.Extension("STARTTLS"); ok {

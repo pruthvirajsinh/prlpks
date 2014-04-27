@@ -1,20 +1,16 @@
 /*
-   prlpks - OpenPGP key server
-   Copyright (C) 2012  Casey Marshall
 
-   This program is free software: you can redistribute it and/or modify
-   it under the terms of the GNU Affero General Public License as published by
-   the Free Software Foundation, version 3.
+PRLPKS - OpenPGP Synchronized Key Server with Deletion
+Copyright (c) 2014 Pruthvirajsinh Rajendrasinh Chauhan
+
+PRLPKS is based heavily on hockeypuck(https://launchpad.net/hockeypuck) by Casey Marshall, copyright 2013(GNU GPL v3).
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU Affero General Public License for more details.
-
-   You should have received a copy of the GNU Affero General Public License
-   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 */
 
+//Made Changes to be in sync with https://github.com/cmars/hockeypuck/commit/80151d7026c3225178f24151386ce871223669e2
 package openpgp
 
 import (
@@ -45,10 +41,10 @@ type SksPeer struct {
 }
 
 type RecoverKey struct {
-	Keytext    []byte
-	RecoverSet *ZSet
-	Source     string
-	response   hkp.ResponseChan
+	Keytext []byte
+	//RecoverSet *ZSet
+	Source   string
+	response hkp.ResponseChan
 	//PRC Start
 	verifiedDomains []string
 	//PRC End
@@ -79,7 +75,7 @@ func NewSksPeer(s *hkp.Service) (*SksPeer, error) {
 func (r *SksPeer) Start() {
 	r.Peer.PrefixTree.Create()
 
-	//Added from latest hockeypuck,cleanly close the peer so that tree will be in consistent state
+	//Added from latest hockeypuck,cleanly close the peer so that tree will be in consistent state.
 	sigChan := make(chan os.Signal)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
@@ -130,7 +126,10 @@ func (r *SksPeer) HandleKeyUpdates() {
 				fmt.Print("-")
 
 				//PRC END
-			} else if keyChange.PreviousMd5 != keyChange.CurrentMd5 {
+			} else {
+				//Before else if keyChange.PreviousMd5 != keyChange.CurrentMd5
+				//Changed according to latest hockeypuck,issue insert without checking for change,
+				//The ptree will itself not add duplicate elements.
 				log.Println("Prefix tree: Insert:", hex.EncodeToString(digestZp.Bytes()), keyChange, keyChange.CurrentMd5)
 				err := r.Peer.Insert(digestZp)
 				if err != nil {
@@ -263,7 +262,7 @@ func (r *SksPeer) workRecovered(rcvr *recon.Recover, ready workRecoveredReady, w
 	if err != nil {
 		return
 	}
-	//PRC End
+
 	for {
 		select {
 		case reconedSet, ok := <-work:
@@ -303,7 +302,7 @@ func (r *SksPeer) workRecovered(rcvr *recon.Recover, ready workRecoveredReady, w
 				fmt.Println("Error updating Own Local State")
 				log.Println("Error updating Own Local State")
 			}
-
+			//PRC End
 			timer.Reset(time.Duration(r.Peer.GossipIntervalSecs()) * time.Second)
 			r.Peer.Resume()
 		case <-timer.C:
@@ -313,7 +312,27 @@ func (r *SksPeer) workRecovered(rcvr *recon.Recover, ready workRecoveredReady, w
 	}
 }
 
+const RequestChunkSize = 100
+
 func (r *SksPeer) requestRecovered(rcvr *recon.Recover, elements *ZSet) (err error) {
+	items := elements.Items()
+	for len(items) > 0 {
+		// Chunk requests to keep the hashquery message size and peer load reasonable.
+		chunksize := RequestChunkSize
+		if chunksize > len(items) {
+			chunksize = len(items)
+		}
+		chunk := items[:chunksize]
+		items = items[chunksize:]
+		err = r.requestChunk(rcvr, chunk)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	return
+}
+
+func (r *SksPeer) requestChunk(rcvr *recon.Recover, chunk []*Zp) (err error) {
 	//Get MappedDomains for authenticatioon of add
 	//defer fmt.Println("Error While Returning from requestRecoverd", err)
 	verifiedDomains, errM := RecoveryAuthentication(rcvr.RemoteAllStatesJSON)
@@ -329,11 +348,11 @@ func (r *SksPeer) requestRecovered(rcvr *recon.Recover, elements *ZSet) (err err
 	}
 	// Make an sks hashquery request
 	hqBuf := bytes.NewBuffer(nil)
-	err = recon.WriteInt(hqBuf, elements.Len())
+	err = recon.WriteInt(hqBuf, len(chunk))
 	if err != nil {
 		return err
 	}
-	for _, z := range elements.Items() {
+	for _, z := range chunk {
 		zb := z.Bytes()
 		zb = recon.PadSksElement(zb)
 		// Hashquery elements are 16 bytes (length_of(P_SKS)-1)
@@ -390,8 +409,8 @@ func (r *SksPeer) requestRecovered(rcvr *recon.Recover, elements *ZSet) (err err
 		// Merge locally
 
 		recoverKey := &RecoverKey{
-			Keytext:         keyBuf.Bytes(),
-			RecoverSet:      elements,
+			Keytext: keyBuf.Bytes(),
+			//RecoverSet:      elements,
 			Source:          rcvr.RemoteAddr.String(),
 			response:        make(chan hkp.Response),
 			verifiedDomains: verifiedDomains}
@@ -420,6 +439,24 @@ func (r *SksPeer) deleteLocal(rcvr *recon.Recover, elements *ZSet) (err error) {
 
 	//defer fmt.Println("Error While Returning from deleteLocal", err)
 
+	items := elements.Items()
+	for len(items) > 0 {
+		// Chunk requests to keep the hashquery message size and peer load reasonable.
+		chunksize := RequestChunkSize
+		if chunksize > len(items) {
+			chunksize = len(items)
+		}
+		chunk := items[:chunksize]
+		items = items[chunksize:]
+		err = r.deleteLocalChunk(rcvr, chunk)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	return
+}
+
+func (r *SksPeer) deleteLocalChunk(rcvr *recon.Recover, chunk []*Zp) (err error) {
 	//Get MappedDomains for authenticatioon of add
 	verifiedDomains, errM := RecoveryAuthentication(rcvr.RemoteAllStatesJSON)
 	if errM != nil {
@@ -431,11 +468,11 @@ func (r *SksPeer) deleteLocal(rcvr *recon.Recover, elements *ZSet) (err error) {
 
 	// Search keys from Local DB
 	hqBuf := bytes.NewBuffer(nil)
-	err = recon.WriteInt(hqBuf, elements.Len())
+	err = recon.WriteInt(hqBuf, len(chunk))
 	if err != nil {
 		return err
 	}
-	for _, z := range elements.Items() {
+	for _, z := range chunk {
 		zb := z.Bytes()
 		zb = recon.PadSksElement(zb)
 		// Hashquery elements are 16 bytes (length_of(P_SKS)-1)

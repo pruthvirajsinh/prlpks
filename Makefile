@@ -9,7 +9,7 @@ compile:
 	GOPATH=$(shell pwd)/build go install -ldflags "-X github.com/pruthvirajsinh/prlpks.Version ${VERSION}" github.com/pruthvirajsinh/prlpks/cmd/prlpks
 
 build:
-	GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
+	#GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...	
 	GOPATH=$(shell pwd)/build make godeps compile
 
 godeps: require-godeps apply-godeps
@@ -36,8 +36,8 @@ apply-godeps: require-godeps
 	${GOPATH}/bin/godeps -u dependencies.tsv
 
 require-godeps:
-	go get -u ${GODEPS}
-	go install ${GODEPS}
+	#go get -u ${GODEPS}
+	#go install ${GODEPS}
 
 clean:
 	rm -rf build/bin build/pkg
@@ -48,4 +48,10 @@ src-clean:
 pkg-clean:
 	rm -f ../prlpks_*.deb ../prlpks_*.dsc ../prlpks_*.changes ../prlpks_*.build ../prlpks_*.tar.gz 
 
-.PHONY: all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps apply-godeps require-godeps clean src-clean pkg-clean build
+copy-to-build:
+	mv -f build ..
+	cp -fr * ../build/src/github.com/pruthvirajsinh/prlpks/
+	mv -f ../build .
+
+.PHONY: all compile godeps fmt debs debsrc debbin apply-godeps require-godeps src-clean pkg-clean copy-to-build build
+#.PHONY: all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps apply-godeps require-godeps clean src-clean pkg-clean copy-to-build build
