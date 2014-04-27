@@ -9,7 +9,7 @@ compile:
 	GOPATH=$(shell pwd)/build go install -ldflags "-X github.com/pruthvirajsinh/prlpks.Version ${VERSION}" github.com/pruthvirajsinh/prlpks/cmd/prlpks
 
 build:
-	#GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...	
+	GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...	
 	GOPATH=$(shell pwd)/build make godeps compile
 
 godeps: require-godeps apply-godeps
@@ -26,7 +26,7 @@ debbin: freeze-build
 	debuild -us -uc -i -b
 
 freeze-build:
-	#GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
+	GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
 	GOPATH=$(shell pwd)/build make apply-godeps
 
 freeze-godeps: require-godeps
@@ -53,5 +53,8 @@ copy-to-build:
 	cp -fr * ../build/src/github.com/pruthvirajsinh/prlpks/
 	mv -f ../build .
 
-.PHONY: copy-to-build all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps pkg-clean build
+copy-www:
+	cp -fr instroot/var/lib/prlpks/www build/bin
+
+.PHONY: copy-to-build all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps pkg-clean build copy-www
 #.PHONY: all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps apply-godeps require-godeps clean src-clean pkg-clean copy-to-build build
