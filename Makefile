@@ -9,7 +9,10 @@ compile:
 	GOPATH=$(shell pwd)/build go install -ldflags "-X github.com/pruthvirajsinh/prlpks.Version ${VERSION}" github.com/pruthvirajsinh/prlpks/cmd/prlpks
 
 build:
+	GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
 	GOPATH=$(shell pwd)/build make godeps compile
+
+godeps: require-godeps apply-godeps
 
 fmt:
 	gofmt -w=true ./...
@@ -23,18 +26,24 @@ debbin: freeze-build
 	debuild -us -uc -i -b
 
 freeze-build:
-	GOPATH=$(shell pwd)/build make 
+	GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
+	GOPATH=$(shell pwd)/build make apply-godeps
 
 freeze-godeps: require-godeps
 	${GOPATH}/bin/godeps $(go list github.com/pruthvirajsinh/prlpks/...) > dependencies.tsv
 
-require-godeps:	
+apply-godeps: require-godeps
+	${GOPATH}/bin/godeps -u dependencies.tsv
+
+require-godeps:
+	#go get -u ${GODEPS}
 	go install ${GODEPS}
 
 clean:
 	rm -rf build/bin build/pkg
 
 copy-to-build:
+	echo "Copying to build"
 	mv -f build ../
 	mkdir ../build/src/github.com/pruthvirajsinh/prlpks
 	rm -fr ../build/src/github.com/pruthvirajsinh/prlpks/*
@@ -43,9 +52,9 @@ copy-to-build:
 
 copy-www:
 	cp -fr instroot/var/lib/prlpks/www build/bin/ 
-
+	cp -f instroot/etc/prlpks/prlpks.conf build/bin/
 
 pkg-clean:
 	rm -f ../prlpks_*.deb ../prlpks_*.dsc ../prlpks_*.changes ../prlpks_*.build ../prlpks_*.tar.gz 
 
-.PHONY: copy-to-build all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps require-godeps clean pkg-clean build copy-www
+.PHONY: all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps apply-godeps require-godeps clean pkg-clean copy-to-build copy-www build
