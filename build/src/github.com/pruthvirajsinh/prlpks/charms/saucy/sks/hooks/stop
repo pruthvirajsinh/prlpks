@@ -1,0 +1,6 @@
+#!/bin/bash -e
+
+service sks stop || true
+
+close-port 11371
+close-port 11370

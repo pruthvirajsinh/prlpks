@@ -1,0 +1,18 @@
+---
+- shell: mkdir -p {{ int_data }}
+- name: Upload key material for integration tests
+  copy: src=/var/data/sks-dump/{{ item }} dest={{ int_data }}/{{ item }} mode=644
+  with_items:
+    - sks-dump-0000.pgp
+    - sks-dump-0001.pgp
+    - sks-dump-0002.pgp
+- name: Stop prlpks
+  service: name=prlpks state=stopped
+- name: Drop database constraints
+  shell: su - prlpks -c 'prlpks db --config /etc/prlpks/prlpks.conf --drop-constraints'
+- name: Load dump files
+  shell: su - prlpks -c 'prlpks load --config /etc/prlpks/prlpks.conf --path {{int_data}}/*.pgp'
+- name: Rebuild database constraints
+  shell: su - prlpks -c 'prlpks db --config /etc/prlpks/prlpks.conf --dedup --create-constraints'
+- name: Start prlpks
+  service: name=prlpks state=started

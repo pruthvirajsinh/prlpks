@@ -1,0 +1,15 @@
+#!/bin/bash -e
+
+service prlpks stop || true
+
+cat >/etc/prlpks/prlpks.conf.d/02-db <<EOF
+
+[prlpks.openpgp.db]
+driver="postgres"
+dsn="dbname=$(relation-get database) host=$(relation-get host) port=$(relation-get port) user=$(relation-get user) password=$(relation-get password)"
+
+EOF
+
+cat /etc/prlpks/prlpks.conf.d/* > /etc/prlpks/prlpks.conf
+
+service prlpks start

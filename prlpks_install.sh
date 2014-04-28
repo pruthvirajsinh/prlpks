@@ -1,8 +1,7 @@
 echo "<< Copying to build >>"
 mv -f build ../
 mkdir -p ../build/src/github.com/pruthvirajsinh/prlpks
-rm -fr ../build/src/github.com/pruthvirajsinh/prlpks/*
-cp -fr * ../build/src/github.com/pruthvirajsinh/prlpks/
+cp -fr ../prlpks ../build/src/github.com/pruthvirajsinh/prlpks
 mv -f ../build ./
 echo "<< Copied to build >>"
 

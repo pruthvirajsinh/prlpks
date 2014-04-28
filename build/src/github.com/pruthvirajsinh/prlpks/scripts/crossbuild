@@ -1,0 +1,62 @@
+#!/bin/bash -ex
+
+#
+# This script depends on a Go cross-compilation setup as described here:
+# http://dave.cheney.net/2012/09/08/an-introduction-to-cross-compilation-with-go
+# 
+. $HOME/local/bin/golang-crosscompile
+
+if [ -z "$1" ]; then
+	PLATFORMS=$(find $GOROOT/pkg -maxdepth 1 -mindepth 1 -type d -exec basename {} \; | grep '_' | sed 's/_/-/g' | egrep -v 'windows|-race' | xargs)
+else
+	PLATFORMS=$1
+fi
+
+make -C doc
+DOCROOT=$(mktemp -d)
+mkdir -p $DOCROOT/usr/share/doc
+cp -r doc/output $DOCROOT/usr/share/doc/prlpks
+trap "rm -rf $DOCROOT" EXIT
+
+GOPATH=$(pwd)/gopath
+rm -rf $GOPATH/bin $GOPATH/pkg
+
+APPS="github.com/pruthvirajsinh/prlpks/cmd/prlpks"
+
+for platform in $PLATFORMS;
+do
+	for app in $APPS;
+	do
+		go-$platform get $app
+		go-$platform install $app
+	done
+done
+
+BUILD=$(pwd)/build
+DIST=$(pwd)/dist
+rm -rf $BUILD
+mkdir -p $DIST
+
+host_platform=$(go env GOOS)-$(go env GOARCH)
+version=$(head -1 debian/changelog | sed 's/.*(//;s/).*//;')
+
+for platform in $PLATFORMS;
+do
+	platform_bin=$(echo $platform | sed 's/-/_/')
+	tarfile=$DIST/prlpks-$version.0$(bzr revno)-$platform.tar
+	tar -C instroot -cvf $tarfile .
+	tar -C instroot-extra -rvf $tarfile .
+	tar -C $DOCROOT -rvf $tarfile .
+	mkdir -p $BUILD/$platform/usr/bin
+	if [[ $platform != $host_platform ]]; then
+		cp -r $GOPATH/bin/$platform_bin/* $BUILD/$platform/usr/bin
+	else
+		cp -r $GOPATH/bin/prlpks $BUILD/$platform/usr/bin
+	fi
+	tar -C $BUILD/$platform -rvf $tarfile ./usr/bin
+	gzip -9f $tarfile
+done
+
+#rm -rf $BUILD
+
+exit 0

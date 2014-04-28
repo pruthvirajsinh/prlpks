@@ -1,0 +1,13 @@
+---
+- name: Stop prlpks
+  service: name=prlpks state=stopped
+- name: Development rebuild of dump-leveldb
+  local_action: shell go build -o files/dump-leveldb github.com/pruthvirajsinh/symflux/cmd/dump-leveldb
+- name: Install dump-leveldb
+  copy: src=files/dump-leveldb dest=/usr/bin/dump-leveldb mode=0755
+- name: Dump the leveldb
+  shell: /usr/bin/dump-leveldb /var/lib/prlpks/recon-ptree > /tmp/prlpks-recon-ptree.txt
+- name: Fetch the dump
+  fetch: src=/tmp/prlpks-recon-ptree.txt dest=dumps/prlpks-recon-ptree.txt flat=yes
+- name: Start prlpks
+  service: name=prlpks state=started
