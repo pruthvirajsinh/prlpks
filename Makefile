@@ -36,16 +36,16 @@ apply-godeps: require-godeps
 	${GOPATH}/bin/godeps -u dependencies.tsv
 
 require-godeps:
-	#go get -u ${GODEPS}
+	go get -u ${GODEPS}
 	go install ${GODEPS}
 
 clean:
 	rm -rf build/bin build/pkg
 
 src-clean:
-	rm -rf build
+	#rm -rf build
 
 pkg-clean:
 	rm -f ../prlpks_*.deb ../prlpks_*.dsc ../prlpks_*.changes ../prlpks_*.build ../prlpks_*.tar.gz 
 
-.PHONY: all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps apply-godeps require-godeps clean
+.PHONY: all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps apply-godeps require-godeps clean src-clean pkg-clean build
