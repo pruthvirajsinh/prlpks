@@ -180,7 +180,7 @@ func (w *Worker) insertOTL(veri *Veri_data) (err error) {
 			strings.ToUpper(veri.Pubkey_id) + ".		\n"
 	}
 
-	message += " <a href=" + messageOTL + ">  " + messageOTL + "  </a>"
+	message += messageOTL
 	message += "\n	If you are not able to click above link then copy and paste it in the address bar of the browser to open it"
 	err = SendEmail(veri.Req_email, subject, message)
 	if err != nil {

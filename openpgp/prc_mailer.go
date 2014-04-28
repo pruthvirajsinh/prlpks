@@ -25,6 +25,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -146,7 +147,7 @@ func _EmailScript() (script string) {
 To: {{.To}}
 Subject: {{.Subject}}
 MIME-version: 1.0
-Content-Type: text/html; charset="UTF-8"
+Content-Type: text; charset="UTF-8"
 
 {{.Message}}`
 }
@@ -331,8 +332,13 @@ func processEmails(pksAddr string, msgData Simap.MsgData) (err error) {
 			}
 			body = bytes.NewBuffer(bodyBuf)
 		}
+		rspMsg := string(body.Bytes())
+		st, err1 := PtagToString(rspMsg)
+		if err1 == nil {
+			rspMsg = st
+		}
 		//Send Mail with Body
-		err = SendEmail(msgData.From, "PKS Add Request Processed", string(body.Bytes()))
+		err = SendEmail(msgData.From, "PKS Add Request Processed", rspMsg)
 
 	} else if strings.ToUpper(msgData.Subject) == "DELETE" {
 		resp, err := http.PostForm(fmt.Sprintf("http://%s/prc/delete", pksAddr), url.Values{"deleteTB": {msgData.Body}})
@@ -350,10 +356,40 @@ func processEmails(pksAddr string, msgData Simap.MsgData) (err error) {
 			}
 			body = bytes.NewBuffer(bodyBuf)
 		}
+		rspMsg := string(body.Bytes())
+		st, err1 := PtagToString(rspMsg)
+		if err1 == nil {
+			rspMsg = st
+		}
 		//Send Mail with Body
-		err = SendEmail(msgData.From, "PKS Delete Request Processed", string(body.Bytes()))
+		err = SendEmail(msgData.From, "PKS Delete Request Processed", rspMsg)
 	} else {
 		err = errors.New("Mail is not a PKS Request.")
 	}
+	return
+}
+
+func PtagToString(htmlString string) (output string, err error) {
+	reg1, err1 := regexp.Compile("<[^>]*>")
+	if err1 != nil {
+		err = err1
+		return
+	}
+
+	reg2, err2 := regexp.Compile("<[p^>]*>.*</p>")
+	//regexp.MustCompile()
+	if err2 != nil {
+		err = err2
+		return
+	}
+
+	s := strings.Replace(htmlString, "\n", "", -1)
+
+	matched := reg2.FindAllString(s, -1)
+	safe := ""
+	for _, m := range matched {
+		safe += reg1.ReplaceAllString(m, " ")
+	}
+	output = safe
 	return
 }
