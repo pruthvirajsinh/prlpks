@@ -42,19 +42,10 @@ require-godeps:
 clean:
 	rm -rf build/bin build/pkg
 
-copy-to-build:
-	echo "Copying to build"
-	mv -f build ../
-	mkdir ../build/src/github.com/pruthvirajsinh/prlpks
-	rm -fr ../build/src/github.com/pruthvirajsinh/prlpks/*
-	cp -fr * ../build/src/github.com/pruthvirajsinh/prlpks/
-	mv -f ../build ./
-
-copy-www:
-	cp -fr instroot/var/lib/prlpks/www build/bin/ 
-	cp -f instroot/etc/prlpks/prlpks.conf build/bin/
+src-clean:
+	rm -rf build
 
 pkg-clean:
 	rm -f ../prlpks_*.deb ../prlpks_*.dsc ../prlpks_*.changes ../prlpks_*.build ../prlpks_*.tar.gz 
 
-.PHONY: all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps apply-godeps require-godeps clean pkg-clean copy-to-build copy-www build
+.PHONY: all compile godeps fmt debs debsrc debbin freeze-build freeze-godeps apply-godeps require-godeps clean
