@@ -169,19 +169,21 @@ func (w *Worker) insertOTL(veri *Veri_data) (err error) {
 	var message string
 
 	if veri.Operation == int16(1) {
+		message = "A key with id " + strings.ToUpper(veri.Pubkey_id) + " is found from your request to PRL PKS at " + time.Now().String() + ".\n"
 		resKeys, err := w.LookupKeys(veri.Req_email, 2)
 		if err == ErrKeyNotFound || len(resKeys) <= 0 { //No key found by Email
+			message += " Opening the following link will ADD the key to PRLPKS.\n"
 		} else { //Replcaes Key
-			message = "	* A key with same email already exists on the server! Opening the following link will REPLACE the existing key having id = " +
+			message += "	* A key with same email already exists on the server! Opening the following link will REPLACE the existing key having id = " +
 				strings.ToUpper(resKeys[0].KeyId()) + ".		\n"
 		}
 	} else if veri.Operation == int16(2) {
-		message = "	* Opening the following link will DELETE the existing key having id = " +
+		message += "Opening the following link will DELETE the existing key having id = " +
 			strings.ToUpper(veri.Pubkey_id) + ".		\n"
 	}
 
 	message += messageOTL
-	message += "\n	If you are not able to click above link then copy and paste it in the address bar of the browser to open it"
+	message += "\n\tIf you are not able to click above link then copy and paste it in the address bar of the browser to open it."
 	err = SendEmail(veri.Req_email, subject, message)
 	if err != nil {
 		fmt.Println(err)

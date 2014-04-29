@@ -160,7 +160,7 @@ func GetAuthForHkpAddr(HkpAddrKey string, remoteStatesInJSON string) (authority 
 			return
 		}
 	}
-	err = errors.New("Could Not Find Authority for that address")
+	err = errors.New("Could Not Find Authority for address " + HkpAddrKey)
 	return
 }
 func GetAuthForEmail(email string, remoteStatesInJSON string) (auth Authority, err error) {
