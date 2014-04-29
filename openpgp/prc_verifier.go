@@ -183,7 +183,9 @@ func (w *Worker) insertOTL(veri *Veri_data) (err error) {
 	}
 
 	message += messageOTL
-	message += "\n\tIf you are not able to click above link then copy and paste it in the address bar of the browser to open it."
+	message += "\nIf you are not able to click above link then copy and paste it in the address bar of the browser to open it."
+	message += "\n If you did not make such request or do not want to process the request kindly ignore this message. Kindly contact " + ownAuth.EmailOfAuthority + " for any queries."
+
 	err = SendEmail(veri.Req_email, subject, message)
 	if err != nil {
 		fmt.Println(err)

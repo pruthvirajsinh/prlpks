@@ -317,7 +317,7 @@ func processEmails(pksAddr string, msgData Simap.MsgData) (err error) {
 	*/
 
 	if strings.ToUpper(msgData.Subject) == "ADD" {
-		resp, err := http.PostForm(fmt.Sprintf("http://%s/pks/add", pksAddr), url.Values{"keytext": {msgData.Body}})
+		resp, err := http.PostForm(fmt.Sprintf("http://%s/pks/add", "localhost:11371"), url.Values{"keytext": {msgData.Body}})
 		if err != nil {
 			return err
 		}
@@ -341,7 +341,7 @@ func processEmails(pksAddr string, msgData Simap.MsgData) (err error) {
 		err = SendEmail(msgData.From, "PKS Add Request Processed", rspMsg)
 
 	} else if strings.ToUpper(msgData.Subject) == "DELETE" {
-		resp, err := http.PostForm(fmt.Sprintf("http://%s/prc/delete", pksAddr), url.Values{"deleteTB": {msgData.Body}})
+		resp, err := http.PostForm(fmt.Sprintf("http://%s/prc/delete", "localhost:11371"), url.Values{"deleteTB": {msgData.Body}})
 		if err != nil {
 			return err
 		}

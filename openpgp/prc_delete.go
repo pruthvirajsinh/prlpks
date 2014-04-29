@@ -34,7 +34,7 @@ func (w *Worker) HandleDeleteReq(delReq *hkp.DeleteReq) {
 
 	resKeys, err := w.LookupKeys(delReq.EmailToDelete, 2)
 	if err == ErrKeyNotFound || len(resKeys) <= 0 { //No key found by Email
-		fmt.Println("Not found by email,Search by Id = ", delReq.EmailToDelete)
+		log.Println("Not found by email,Search by Id = ", delReq.EmailToDelete)
 		foundKey, err1 := w.LookupKey(delReq.EmailToDelete) //Find by ID
 		if err1 == nil && foundKey != nil {
 			resKeys = append(resKeys, foundKey)
