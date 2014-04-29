@@ -1,5 +1,0 @@
----
-- hosts: sks
-  sudo: yes
-  roles:
-    - load-sks

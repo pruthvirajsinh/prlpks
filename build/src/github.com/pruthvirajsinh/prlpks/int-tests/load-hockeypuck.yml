@@ -1,5 +1,0 @@
----
-- hosts: prlpks
-  sudo: yes
-  roles:
-    - load-prlpks

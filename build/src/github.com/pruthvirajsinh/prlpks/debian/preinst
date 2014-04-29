@@ -1,9 +1,0 @@
-#!/bin/sh -e
-
-if test "$uid" && test -x "/usr/bin/createdb" && test -x "/usr/bin/createuser"; then
-	invoke-rc.d postgresql start
-fi
-
-#DEBHELPER#
-
-exit 0

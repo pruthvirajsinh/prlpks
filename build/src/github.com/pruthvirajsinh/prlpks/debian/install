@@ -1,5 +1,0 @@
-build/bin/prlpks /usr/bin/
-instroot/etc/prlpks /etc/
-instroot/etc/init.d/prlpks /etc/init.d/
-instroot/var/lib/prlpks/www /var/lib/prlpks/
-doc/output/* /usr/share/doc/prlpks/

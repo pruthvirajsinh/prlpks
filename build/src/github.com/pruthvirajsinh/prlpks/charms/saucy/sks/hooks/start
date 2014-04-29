@@ -1,6 +1,0 @@
-#!/bin/bash -e
-
-service sks restart
-
-open-port 11371
-open-port 11370

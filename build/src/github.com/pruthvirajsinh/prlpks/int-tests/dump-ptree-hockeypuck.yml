@@ -1,6 +1,0 @@
----
-- hosts: prlpks
-  user: root
-  roles:
-    - dump-ptree-common
-    - dump-ptree-prlpks
