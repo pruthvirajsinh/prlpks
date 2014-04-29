@@ -9,7 +9,7 @@ compile:
 	GOPATH=$(shell pwd)/build go install -ldflags "-X github.com/pruthvirajsinh/prlpks.Version ${VERSION}" github.com/pruthvirajsinh/prlpks/cmd/prlpks
 
 build:
-	#GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
+	GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
 	GOPATH=$(shell pwd)/build make godeps compile
 
 godeps: require-godeps apply-godeps
@@ -26,17 +26,17 @@ debbin: freeze-build
 	debuild -us -uc -i -b
 
 freeze-build:
-	#GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
+	GOPATH=$(shell pwd)/build go get github.com/pruthvirajsinh/prlpks/...
 	GOPATH=$(shell pwd)/build make apply-godeps
 
 freeze-godeps: require-godeps
 	${GOPATH}/bin/godeps $(go list github.com/pruthvirajsinh/prlpks/...) > dependencies.tsv
 
 apply-godeps: require-godeps
-	#${GOPATH}/bin/godeps -u dependencies.tsv
+	${GOPATH}/bin/godeps -u dependencies.tsv
 
 require-godeps:
-	#go get -u ${GODEPS}
+	go get -u ${GODEPS}
 	go install ${GODEPS}
 
 clean:

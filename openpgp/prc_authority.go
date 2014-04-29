@@ -177,9 +177,9 @@ func GetOwnAuthority() (auth Authority, err error) {
 	}
 	domns := Config().GetStrings("authority.domainsUnderAuth")
 
-	if len(domns) < 1 {
-		err = errors.New("No doamins under own Found")
-	}
+	//if len(domns) < 1 {
+	//	err = errors.New("No doamins under own Found")
+	//}
 
 	eml := Config().GetString("authority.email")
 	if eml == "" {
