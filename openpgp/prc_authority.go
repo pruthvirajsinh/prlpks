@@ -125,8 +125,7 @@ func GetExplicitAuths(email string) (err error) {
 	if found {
 		return
 	} else {
-
-		err = errors.New()
+		err = errors.New(msg)
 		return
 	}
 	return
