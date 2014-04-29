@@ -98,7 +98,7 @@ func GetExplicitAuths(email string) (err error) {
 	}
 
 	var exAuth ExplicitAuth
-
+	msg := ""
 	err = json.Unmarshal([]byte(str), &exAuth)
 	if err != nil {
 		return
@@ -119,12 +119,14 @@ func GetExplicitAuths(email string) (err error) {
 		if found {
 			break
 		}
+		msg += excEmail + " "
 	}
 
 	if found {
 		return
 	} else {
-		err = errors.New("Not in our authority")
+
+		err = errors.New()
 		return
 	}
 	return
@@ -217,7 +219,7 @@ func IsUnderAuth(publicKey Pubkey) (err error) {
 	splits := strings.Split(email, "@")
 	domain := splits[len(splits)-1]
 
-	msg := "Sorry. This server can upload/delete keys of the following domains only : "
+	msg := "Sorry. This server can upload/delete keys of the following types of email addresses only : "
 	for _, dom := range ownAuth.DomainsUnderAuth {
 		msg += dom + " "
 		if dom == domain {
@@ -228,6 +230,7 @@ func IsUnderAuth(publicKey Pubkey) (err error) {
 	if underAuth == false {
 		err = GetExplicitAuths(email)
 		if err != nil {
+			msg += err.Error()
 			err = errors.New(msg)
 		}
 		return
