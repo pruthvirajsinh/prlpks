@@ -33,7 +33,7 @@ freeze-godeps: require-godeps
 	${GOPATH}/bin/godeps $(go list github.com/pruthvirajsinh/prlpks/...) > dependencies.tsv
 
 apply-godeps: require-godeps
-	${GOPATH}/bin/godeps -u dependencies.tsv
+	#${GOPATH}/bin/godeps -u dependencies.tsv
 
 require-godeps:
 	go get -u ${GODEPS}
