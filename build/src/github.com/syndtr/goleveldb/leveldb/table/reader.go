@@ -29,13 +29,6 @@ var (
 	ErrIterReleased = errors.New("leveldb/table: iterator released")
 )
 
-func max(x, y int) int {
-	if x > y {
-		return x
-	}
-	return y
-}
-
 type block struct {
 	cmp            comparer.BasicComparer
 	data           []byte
@@ -45,33 +38,34 @@ type block struct {
 	checksum bool
 }
 
-func (b *block) seek(rstart, rlimit int, key []byte) (index, offset int, err error) {
-	n := b.restartsOffset
-	data := b.data
-	cmp := b.cmp
-
-	index = sort.Search(b.restartsLen-rstart-(b.restartsLen-rlimit), func(i int) bool {
-		offset := int(binary.LittleEndian.Uint32(data[n+4*(rstart+i):]))
-		offset += 1                               // shared always zero, since this is a restart point
-		v1, n1 := binary.Uvarint(data[offset:])   // key length
-		_, n2 := binary.Uvarint(data[offset+n1:]) // value length
-		m := offset + n1 + n2
-		return cmp.Compare(data[m:m+int(v1)], key) > 0
-	}) + rstart - 1
-	if index < rstart {
-		// The smallest key is greater-than key sought.
-		index = rstart
+func (b *block) seek(key []byte) (offset int, err error) {
+	if len(key) > 0 {
+		n := b.restartsOffset
+		data := b.data
+		cmp := b.cmp
+		index := sort.Search(b.restartsLen, func(i int) bool {
+			o := int(binary.LittleEndian.Uint32(data[n+4*i:]))
+			o++
+			v1, n1 := binary.Uvarint(data[o:])
+			_, n2 := binary.Uvarint(data[o+n1:])
+			m := o + n1 + n2
+			s := data[m : m+int(v1)]
+			return cmp.Compare(s, key) > 0
+		})
+		if index > 0 {
+			offset = int(binary.LittleEndian.Uint32(data[n+4*(index-1):]))
+		}
 	}
-	offset = int(binary.LittleEndian.Uint32(data[n+4*index:]))
 	return
 }
 
-func (b *block) restartIndex(rstart, rlimit, offset int) int {
+func (b *block) restartIndex(start, offset int) int {
 	n := b.restartsOffset
 	data := b.data
-	return sort.Search(b.restartsLen-rstart-(b.restartsLen-rlimit), func(i int) bool {
-		return int(binary.LittleEndian.Uint32(data[n+4*(rstart+i):])) > offset
-	}) + rstart - 1
+	return sort.Search(b.restartsLen-start, func(i int) bool {
+		o := int(binary.LittleEndian.Uint32(data[n+4*(start+i):]))
+		return offset <= o
+	}) + start - 1
 }
 
 func (b *block) restartOffset(index int) int {
@@ -81,13 +75,13 @@ func (b *block) restartOffset(index int) int {
 func (b *block) entry(offset int) (key, value []byte, nShared, n int, err error) {
 	if offset >= b.restartsOffset {
 		if offset != b.restartsOffset {
-			err = errors.New("leveldb/table: Reader: BlockEntry: invalid block (block entries offset not aligned)")
+			err = errors.New("leveldb/table: Reader: invalid block (block entries offset not aligned)")
 		}
 		return
 	}
-	v0, n0 := binary.Uvarint(b.data[offset:])       // Shared prefix length
-	v1, n1 := binary.Uvarint(b.data[offset+n0:])    // Key length
-	v2, n2 := binary.Uvarint(b.data[offset+n0+n1:]) // Value length
+	v0, n0 := binary.Uvarint(b.data[offset:])
+	v1, n1 := binary.Uvarint(b.data[offset+n0:])
+	v2, n2 := binary.Uvarint(b.data[offset+n0+n1:])
 	m := n0 + n1 + n2
 	n = m + int(v1) + int(v2)
 	if n0 <= 0 || n1 <= 0 || n2 <= 0 || offset+n > b.restartsOffset {
@@ -100,43 +94,14 @@ func (b *block) entry(offset int) (key, value []byte, nShared, n int, err error)
 	return
 }
 
-func (b *block) newIterator(slice *util.Range, inclLimit bool, cache util.Releaser) *blockIter {
-	bi := &blockIter{
+func (b *block) newIterator(cache util.Releaser) *blockIter {
+	return &blockIter{
 		block: b,
 		cache: cache,
 		// Valid key should never be nil.
-		key:             make([]byte, 0),
-		dir:             dirSOI,
-		riStart:         0,
-		riLimit:         b.restartsLen,
-		offsetStart:     0,
-		offsetRealStart: 0,
-		offsetLimit:     b.restartsOffset,
+		key: make([]byte, 0),
+		dir: dirSOI,
 	}
-	if slice != nil {
-		if slice.Start != nil {
-			if bi.Seek(slice.Start) {
-				bi.riStart = b.restartIndex(bi.restartIndex, b.restartsLen, bi.prevOffset)
-				bi.offsetStart = b.restartOffset(bi.riStart)
-				bi.offsetRealStart = bi.prevOffset
-			} else {
-				bi.riStart = b.restartsLen
-				bi.offsetStart = b.restartsOffset
-				bi.offsetRealStart = b.restartsOffset
-			}
-		}
-		if slice.Limit != nil {
-			if bi.Seek(slice.Limit) && (!inclLimit || bi.Next()) {
-				bi.offsetLimit = bi.prevOffset
-				bi.riLimit = bi.restartIndex + 1
-			}
-		}
-		bi.reset()
-		if bi.offsetStart > bi.offsetLimit {
-			bi.sErr(errors.New("leveldb/table: Reader: invalid slice range"))
-		}
-	}
-	return bi
 }
 
 type dir int
@@ -161,14 +126,6 @@ type blockIter struct {
 	restartIndex int
 	// Iterator direction.
 	dir dir
-	// Restart index slice range.
-	riStart int
-	riLimit int
-	// Offset slice range.
-	offsetStart     int
-	offsetRealStart int
-	offsetLimit     int
-	// Error.
 	err error
 }
 
@@ -178,36 +135,6 @@ func (i *blockIter) sErr(err error) {
 	i.value = nil
 	i.prevNode = nil
 	i.prevKeys = nil
-}
-
-func (i *blockIter) reset() {
-	if i.dir == dirBackward {
-		i.prevNode = i.prevNode[:0]
-		i.prevKeys = i.prevKeys[:0]
-	}
-	i.restartIndex = i.riStart
-	i.offset = i.offsetStart
-	i.dir = dirSOI
-	i.key = i.key[:0]
-	i.value = nil
-}
-
-func (i *blockIter) isFirst() bool {
-	switch i.dir {
-	case dirForward:
-		return i.prevOffset == i.offsetRealStart
-	case dirBackward:
-		return len(i.prevNode) == 1 && i.restartIndex == i.riStart
-	}
-	return false
-}
-
-func (i *blockIter) isLast() bool {
-	switch i.dir {
-	case dirForward, dirBackward:
-		return i.offset == i.offsetLimit
-	}
-	return false
 }
 
 func (i *blockIter) First() bool {
@@ -222,6 +149,7 @@ func (i *blockIter) First() bool {
 		i.prevNode = i.prevNode[:0]
 		i.prevKeys = i.prevKeys[:0]
 	}
+	i.offset = 0
 	i.dir = dirSOI
 	return i.Next()
 }
@@ -238,6 +166,7 @@ func (i *blockIter) Last() bool {
 		i.prevNode = i.prevNode[:0]
 		i.prevKeys = i.prevKeys[:0]
 	}
+	i.offset = i.block.restartsOffset
 	i.dir = dirEOI
 	return i.Prev()
 }
@@ -250,22 +179,19 @@ func (i *blockIter) Seek(key []byte) bool {
 		return false
 	}
 
-	ri, offset, err := i.block.seek(i.riStart, i.riLimit, key)
+	offset, err := i.block.seek(key)
 	if err != nil {
 		i.sErr(err)
 		return false
 	}
-	i.restartIndex = ri
-	i.offset = max(i.offsetStart, offset)
-	if i.dir == dirSOI || i.dir == dirEOI {
+	if i.dir == dirEOI {
 		i.dir = dirForward
 	}
-	for i.Next() {
-		if i.block.cmp.Compare(i.key, key) >= 0 {
-			return true
-		}
+	i.offset = offset
+	cmp := i.block.cmp
+	for i.Next() && cmp.Compare(i.key, key) < 0 {
 	}
-	return false
+	return i.err == nil && i.dir == dirForward
 }
 
 func (i *blockIter) Next() bool {
@@ -276,33 +202,9 @@ func (i *blockIter) Next() bool {
 		return false
 	}
 
-	if i.dir == dirSOI {
-		i.restartIndex = i.riStart
-		i.offset = i.offsetStart
-	} else if i.dir == dirBackward {
+	if i.dir == dirBackward {
 		i.prevNode = i.prevNode[:0]
 		i.prevKeys = i.prevKeys[:0]
-	}
-	for i.offset < i.offsetRealStart {
-		key, value, nShared, n, err := i.block.entry(i.offset)
-		if err != nil {
-			i.sErr(err)
-			return false
-		}
-		if n == 0 {
-			i.dir = dirEOI
-			return false
-		}
-		i.key = append(i.key[:nShared], key...)
-		i.value = value
-		i.offset += n
-	}
-	if i.offset >= i.offsetLimit {
-		i.dir = dirEOI
-		if i.offset != i.offsetLimit {
-			i.sErr(errors.New("leveldb/table: Reader: Next: invalid block (block entries offset not aligned)"))
-		}
-		return false
 	}
 	key, value, nShared, n, err := i.block.entry(i.offset)
 	if err != nil {
@@ -311,6 +213,8 @@ func (i *blockIter) Next() bool {
 	}
 	if n == 0 {
 		i.dir = dirEOI
+		i.key = i.key[:0]
+		i.value = i.value[:0]
 		return false
 	}
 	i.key = append(i.key[:nShared], key...)
@@ -329,36 +233,34 @@ func (i *blockIter) Prev() bool {
 		return false
 	}
 
-	var ri int
+	var restartIndex int
 	if i.dir == dirForward {
 		// Change direction.
 		i.offset = i.prevOffset
-		if i.offset == i.offsetRealStart {
+		if i.offset == 0 {
 			i.dir = dirSOI
+			i.key = i.key[:0]
+			i.value = i.value[:0]
 			return false
 		}
-		ri = i.block.restartIndex(i.restartIndex, i.riLimit, i.offset)
+		restartIndex = i.block.restartIndex(0, i.offset)
 		i.dir = dirBackward
 	} else if i.dir == dirEOI {
 		// At the end of iterator.
-		i.restartIndex = i.riLimit
-		i.offset = i.offsetLimit
-		if i.offset == i.offsetRealStart {
-			i.dir = dirSOI
-			return false
-		}
-		ri = i.riLimit - 1
+		restartIndex = i.block.restartsLen - 1
 		i.dir = dirBackward
 	} else if len(i.prevNode) == 1 {
 		// This is the end of a restart range.
 		i.offset = i.prevNode[0]
 		i.prevNode = i.prevNode[:0]
-		if i.restartIndex == i.riStart {
+		if i.restartIndex == 0 {
 			i.dir = dirSOI
+			i.key = i.key[:0]
+			i.value = i.value[:0]
 			return false
 		}
 		i.restartIndex--
-		ri = i.restartIndex
+		restartIndex = i.restartIndex
 	} else {
 		// In the middle of restart range, get from cache.
 		n := len(i.prevNode) - 3
@@ -378,14 +280,14 @@ func (i *blockIter) Prev() bool {
 	// Build entries cache.
 	i.key = i.key[:0]
 	i.value = nil
-	offset := i.block.restartOffset(ri)
+	offset := i.block.restartOffset(restartIndex)
 	if offset == i.offset {
-		ri -= 1
-		if ri < 0 {
+		restartIndex--
+		if restartIndex < 0 {
 			i.dir = dirSOI
 			return false
 		}
-		offset = i.block.restartOffset(ri)
+		offset = i.block.restartOffset(restartIndex)
 	}
 	i.prevNode = append(i.prevNode, offset)
 	for {
@@ -394,30 +296,28 @@ func (i *blockIter) Prev() bool {
 			i.sErr(err)
 			return false
 		}
-		if offset >= i.offsetRealStart {
-			if i.value != nil {
-				// Appends 3 variables:
-				// 1. Previous keys offset
-				// 2. Value offset in the data block
-				// 3. Value length
-				i.prevNode = append(i.prevNode, len(i.prevKeys), offset-len(i.value), len(i.value))
-				i.prevKeys = append(i.prevKeys, i.key...)
-			}
-			i.value = value
+		if i.value != nil {
+			// Appends 3 variables:
+			// 1. Previous keys offset
+			// 2. Value offset in the data block
+			// 3. Value length
+			i.prevNode = append(i.prevNode, len(i.prevKeys), offset-len(i.value), len(i.value))
+			i.prevKeys = append(i.prevKeys, i.key...)
 		}
 		i.key = append(i.key[:nShared], key...)
+		i.value = value
 		offset += n
 		// Stop if target offset reached.
 		if offset >= i.offset {
 			if offset != i.offset {
-				i.sErr(errors.New("leveldb/table: Reader: Prev: invalid block (block entries offset not aligned)"))
+				i.sErr(errors.New("leveldb/table: Reader: invalid block (block entries offset not aligned)"))
 				return false
 			}
 
 			break
 		}
 	}
-	i.restartIndex = ri
+	i.restartIndex = restartIndex
 	i.offset = offset
 	return true
 }
@@ -492,7 +392,6 @@ func (b *filterBlock) contains(offset uint64, key []byte) bool {
 type indexIter struct {
 	blockIter
 	tableReader *Reader
-	slice       *util.Range
 	// Options
 	checksum  bool
 	fillCache bool
@@ -507,11 +406,8 @@ func (i *indexIter) Get() iterator.Iterator {
 	if n == 0 {
 		return iterator.NewEmptyIterator(errors.New("leveldb/table: Reader: invalid table (bad data block handle)"))
 	}
-	var slice *util.Range
-	if i.slice != nil && (i.blockIter.isFirst() || i.blockIter.isLast()) {
-		slice = i.slice
-	}
-	return i.tableReader.getDataIter(dataBH, slice, i.checksum, i.fillCache)
+	iter := i.tableReader.getDataIter(dataBH, i.checksum, i.fillCache)
+	return iter
 }
 
 // Reader is a table reader.
@@ -602,7 +498,7 @@ func (r *Reader) readFilterBlock(bh blockHandle, filter filter.Filter) (*filterB
 	return b, nil
 }
 
-func (r *Reader) getDataIter(dataBH blockHandle, slice *util.Range, checksum, fillCache bool) iterator.Iterator {
+func (r *Reader) getDataIter(dataBH blockHandle, checksum, fillCache bool) iterator.Iterator {
 	if r.cache != nil {
 		// Get/set block cache.
 		var err error
@@ -630,7 +526,7 @@ func (r *Reader) getDataIter(dataBH blockHandle, slice *util.Range, checksum, fi
 				}
 				dataBlock.checksum = true
 			}
-			iter := dataBlock.newIterator(slice, false, cache)
+			iter := dataBlock.newIterator(cache)
 			return iter
 		}
 	}
@@ -638,35 +534,28 @@ func (r *Reader) getDataIter(dataBH blockHandle, slice *util.Range, checksum, fi
 	if err != nil {
 		return iterator.NewEmptyIterator(err)
 	}
-	iter := dataBlock.newIterator(slice, false, nil)
+	iter := dataBlock.newIterator(nil)
 	return iter
 }
 
-// NewIterator creates an iterator from the table.
-//
-// Slice allows slicing the iterator to only contains keys in the given
-// range. A nil Range.Start is treated as a key before all keys in the
-// table. And a nil Range.Limit is treated as a key after all keys in
-// the table.
+// NewIterator returns an iterator of the table.
 //
 // The returned iterator is not goroutine-safe and should be released
 // when not used.
 //
 // Also read Iterator documentation of the leveldb/iterator package.
-
-func (r *Reader) NewIterator(slice *util.Range, ro *opt.ReadOptions) iterator.Iterator {
+func (r *Reader) NewIterator(ro *opt.ReadOptions) iterator.Iterator {
 	if r.err != nil {
 		return iterator.NewEmptyIterator(r.err)
 	}
 
 	index := &indexIter{
-		blockIter:   *r.indexBlock.newIterator(slice, true, nil),
+		blockIter:   *r.indexBlock.newIterator(nil),
 		tableReader: r,
-		slice:       slice,
 		checksum:    ro.GetStrict(opt.StrictBlockChecksum),
 		fillCache:   !ro.GetDontFillCache(),
 	}
-	return iterator.NewIndexedIterator(index, r.strictIter || ro.GetStrict(opt.StrictIterator), false)
+	return iterator.NewIndexedIterator(index, r.strictIter || ro.GetStrict(opt.StrictIterator))
 }
 
 // Find finds key/value pair whose key is greater than or equal to the
@@ -681,7 +570,7 @@ func (r *Reader) Find(key []byte, ro *opt.ReadOptions) (rkey, value []byte, err 
 		return
 	}
 
-	index := r.indexBlock.newIterator(nil, true, nil)
+	index := r.indexBlock.newIterator(nil)
 	defer index.Release()
 	if !index.Seek(key) {
 		err = index.Error()
@@ -699,7 +588,7 @@ func (r *Reader) Find(key []byte, ro *opt.ReadOptions) (rkey, value []byte, err 
 		err = ErrNotFound
 		return
 	}
-	data := r.getDataIter(dataBH, nil, ro.GetStrict(opt.StrictBlockChecksum), !ro.GetDontFillCache())
+	data := r.getDataIter(dataBH, ro.GetStrict(opt.StrictBlockChecksum), !ro.GetDontFillCache())
 	defer data.Release()
 	if !data.Seek(key) {
 		err = data.Error()
@@ -741,7 +630,7 @@ func (r *Reader) GetApproximateOffset(key []byte) (offset int64, err error) {
 		return
 	}
 
-	index := r.indexBlock.newIterator(nil, true, nil)
+	index := r.indexBlock.newIterator(nil)
 	defer index.Release()
 	if index.Seek(key) {
 		dataBH, n := decodeBlockHandle(index.Value())
@@ -810,7 +699,7 @@ func NewReader(f io.ReaderAt, size int64, cache cache.Namespace, o *opt.Options)
 	}
 	// Set data end.
 	r.dataEnd = int64(metaBH.offset)
-	metaIter := metaBlock.newIterator(nil, false, nil)
+	metaIter := metaBlock.newIterator(nil)
 	for metaIter.Next() {
 		key := string(metaIter.Key())
 		if !strings.HasPrefix(key, "filter.") {

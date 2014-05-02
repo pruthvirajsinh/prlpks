@@ -1,0 +1,15 @@
+# prlpks - ubuntu upstart file
+
+description "prlpks OpenPGP Keyserver"
+author "Pruthvirajsinh Chauhan <pruthvirajsinh@yahoo.com>"
+
+start on (runlevel [2345] and started postgresql)
+stop on (runlevel [016] or stopping postgresql)
+
+# Automatically restart process if crashed
+respawn
+
+setuid prlpks
+
+# Start the process
+exec /usr/bin/prlpks run --config /etc/prlpks/prlpks.conf

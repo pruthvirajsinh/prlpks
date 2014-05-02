@@ -15,18 +15,6 @@ import (
 // This is the result of the parsing of a TOML file.
 type TomlTree map[string]interface{}
 
-// Has returns a boolean indicating if the toplevel tree contains the given
-// key.
-func (t *TomlTree) Has(key string) bool {
-	mp := (map[string]interface{})(*t)
-	for k, _ := range mp {
-		if k == key {
-			return true
-		}
-	}
-	return false
-}
-
 // Keys returns the keys of the toplevel tree.
 // Warning: this is a costly operation.
 func (t *TomlTree) Keys() []string {
@@ -42,11 +30,8 @@ func (t *TomlTree) Keys() []string {
 // Key is a dot-separated path (e.g. a.b.c).
 // Returns nil if the path does not exist in the tree.
 func (t *TomlTree) Get(key string) interface{} {
-	return t.GetPath(strings.Split(key, "."))
-}
-
-func (t *TomlTree) GetPath(keys []string) interface{} {
 	subtree := t
+	keys := strings.Split(key, ".")
 	for _, intermediate_key := range keys[:len(keys)-1] {
 		_, exists := (*subtree)[intermediate_key]
 		if !exists {
@@ -70,11 +55,8 @@ func (t *TomlTree) GetDefault(key string, def interface{}) interface{} {
 // Key is a dot-separated path (e.g. a.b.c).
 // Creates all necessary intermediates trees, if needed.
 func (t *TomlTree) Set(key string, value interface{}) {
-	t.SetPath(strings.Split(key, "."), value)
-}
-
-func (t *TomlTree) SetPath(keys []string, value interface{}) {
 	subtree := t
+	keys := strings.Split(key, ".")
 	for _, intermediate_key := range keys[:len(keys)-1] {
 		_, exists := (*subtree)[intermediate_key]
 		if !exists {
@@ -94,9 +76,6 @@ func (t *TomlTree) SetPath(keys []string, value interface{}) {
 func (t *TomlTree) createSubTree(key string) {
 	subtree := t
 	for _, intermediate_key := range strings.Split(key, ".") {
-		if intermediate_key == "" {
-			panic("empty intermediate table")
-		}
 		_, exists := (*subtree)[intermediate_key]
 		if !exists {
 			var new_tree TomlTree = make(TomlTree)
@@ -130,5 +109,6 @@ func LoadFile(path string) (tree *TomlTree, err error) {
 		s := string(buff)
 		tree, err = Load(s)
 	}
+
 	return
 }

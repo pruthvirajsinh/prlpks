@@ -22,9 +22,8 @@ type IteratorIndexer interface {
 
 type indexedIterator struct {
 	util.BasicReleaser
-	index     IteratorIndexer
-	strict    bool
-	strictGet bool
+	index  IteratorIndexer
+	strict bool
 
 	data Iterator
 	err  error
@@ -35,11 +34,6 @@ func (i *indexedIterator) setData() {
 		i.data.Release()
 	}
 	i.data = i.index.Get()
-	if i.strictGet {
-		if err := i.data.Error(); err != nil {
-			i.err = err
-		}
-	}
 }
 
 func (i *indexedIterator) clearData() {
@@ -202,10 +196,7 @@ func (i *indexedIterator) Error() error {
 //
 // If strict is true then error yield by data iterator will halt the indexed
 // iterator, on contrary if strict is false then the indexed iterator will
-// ignore those error and move on to the next index. If strictGet is true and
-// index.Get() yield an 'error iterator' then the indexed iterator will be halted.
-// An 'error iterator' is iterator which its Error() method always return non-nil
-// even before any 'seeks method' is called.
-func NewIndexedIterator(index IteratorIndexer, strict, strictGet bool) Iterator {
-	return &indexedIterator{index: index, strict: strict, strictGet: strictGet}
+// ignore those error and move on to the next index.
+func NewIndexedIterator(index IteratorIndexer, strict bool) Iterator {
+	return &indexedIterator{index: index, strict: strict}
 }

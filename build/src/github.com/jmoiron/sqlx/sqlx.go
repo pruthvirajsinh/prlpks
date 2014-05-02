@@ -3,7 +3,7 @@ package sqlx
 import (
 	"database/sql"
 	"errors"
-
+	"fmt"
 	"io/ioutil"
 	"log"
 	"path/filepath"
@@ -11,36 +11,36 @@ import (
 	"strings"
 )
 
-// FIXME: I should deprecate this.  It makes it difficult to write libraries
-// which use sqlx, because programs can set this and break them.
-
-// NameMapper is used to map column names to struct field names.  By default,
-// it uses strings.ToLower to lowercase struct field names.  It can be set
-// to whatever you want, but it is encouraged to be set before sqlx is used
-// as field-to-name mappings are cached after first use on a type.
-var NameMapper = strings.ToLower
-
-// ColScanner is an interface for something which can Scan and return a list
-// of columns (Row, Rows)
-type ColScanner interface {
-	Columns() ([]string, error)
-	Scan(dest ...interface{}) error
-	Err() error
+// A wrapper around sql.Rows which caches costly reflect operations
+// during a looped StructScan
+type Rows struct {
+	sql.Rows
+	started bool
+	fields  []int
+	base    reflect.Type
+	values  []interface{}
 }
 
-// Queryer is an interface for something which can Query (Tx, DB, Stmt)
+// A reimplementation of sql.Row in order to gain access to the underlying
+// sql.Rows.Columns() data, necessary for StructScan.
+type Row struct {
+	rows sql.Rows
+	err  error
+}
+
+// An interface for something which can Execute sql queries (Tx, DB, Stmt)
 type Queryer interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 	Queryx(query string, args ...interface{}) (*Rows, error)
 	QueryRowx(query string, args ...interface{}) *Row
 }
 
-// Execer is an interface for something which can Exec (Tx, DB, Stmt)
+// An interface for something which can Execute sql commands (Tx, DB, Stmt)
 type Execer interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
 }
 
-// Binder is an interface for something which can bind queries (Tx, DB)
+// An interface for something which can bind queries (Tx, DB)
 type Binder interface {
 	DriverName() string
 	Rebind(string) string
@@ -48,7 +48,7 @@ type Binder interface {
 	BindStruct(string, interface{}) (string, []interface{}, error)
 }
 
-// Ext is a union interface which can bind, query, and exec (Tx, DB), used for
+// A union interface which can bind, query, and exec (Tx, DB), used for
 // NamedQuery and NamedExec, which requires exec/query and BindMap/Struct
 type Ext interface {
 	Binder
@@ -56,53 +56,12 @@ type Ext interface {
 	Execer
 }
 
-// Preparer is an interface for something which can prepare sql statements (Tx, DB)
+// An interface for something which can Prepare sql statements (Tx, DB)
 type Preparer interface {
 	Prepare(query string) (*sql.Stmt, error)
 }
 
-// determine if any of our extensions are unsafe
-func isUnsafe(i interface{}) bool {
-	switch i.(type) {
-	case Row:
-		return i.(Row).unsafe
-	case *Row:
-		return i.(*Row).unsafe
-	case Rows:
-		return i.(Rows).unsafe
-	case *Rows:
-		return i.(*Rows).unsafe
-	case Stmt:
-		return i.(Stmt).unsafe
-	case qStmt:
-		return i.(qStmt).Stmt.unsafe
-	case *qStmt:
-		return i.(*qStmt).Stmt.unsafe
-	case DB:
-		return i.(DB).unsafe
-	case *DB:
-		return i.(*DB).unsafe
-	case Tx:
-		return i.(Tx).unsafe
-	case *Tx:
-		return i.(*Tx).unsafe
-	case sql.Rows, *sql.Rows:
-		return false
-	default:
-		return false
-	}
-}
-
-// Row is a reimplementation of sql.Row in order to gain access to the underlying
-// sql.Rows.Columns() data, necessary for StructScan.
-type Row struct {
-	err    error
-	unsafe bool
-	rows   *sql.Rows
-}
-
-// Scan is a fixed implementation of sql.Row.Scan, which does not discard the
-// underlying error from the internal rows object if it exists.
+// Same implementation as sql.Row.Scan
 func (r *Row) Scan(dest ...interface{}) error {
 	if r.err != nil {
 		return r.err
@@ -129,16 +88,12 @@ func (r *Row) Scan(dest ...interface{}) error {
 
 	defer r.rows.Close()
 	if !r.rows.Next() {
-		if r.rows.Err() != nil {
-			r.err = r.rows.Err()
-			return r.err
-		}
 		return sql.ErrNoRows
 	}
 	return r.rows.Scan(dest...)
 }
 
-// Columns returns the underlying sql.Rows.Columns(), or the deferred error usually
+// Return the underlying sql.Rows.Columns(), or the deferred error usually
 // returned by Row.Scan()
 func (r *Row) Columns() ([]string, error) {
 	if r.err != nil {
@@ -147,70 +102,52 @@ func (r *Row) Columns() ([]string, error) {
 	return r.rows.Columns()
 }
 
-// Err returns the error encountered while scanning.
-func (r *Row) Err() error {
-	return r.err
-}
-
-// DB is a wrapper around sql.DB which keeps track of the driverName upon Open,
+// An wrapper around sql.DB which keeps track of the driverName upon Open,
 // used mostly to automatically bind named queries using the right bindvars.
 type DB struct {
-	*sql.DB
+	sql.DB
 	driverName string
-	unsafe     bool
 }
 
-// NewDb returns a new sqlx DB wrapper for a pre-existing *sql.DB.  The
-// driverName of the original database is required for named query support.
 func NewDb(db *sql.DB, driverName string) *DB {
-	return &DB{DB: db, driverName: driverName}
+	return &DB{*db, driverName}
 }
 
-// DriverName returns the driverName passed to the Open function for this DB.
+// Returns the driverName passed to the Open function for this DB.
 func (db *DB) DriverName() string {
 	return db.driverName
 }
 
-// Open is the same as database/sql's Open, but returns an *sqlx.DB instead.
+// Same as database/sql's Open, but returns an *sqlx.DB instead.
 func Open(driverName, dataSourceName string) (*DB, error) {
 	db, err := sql.Open(driverName, dataSourceName)
 	if err != nil {
 		return nil, err
 	}
-	return &DB{DB: db, driverName: driverName}, err
+	return &DB{*db, driverName}, err
 }
 
-// Rebind transforms a query from QUESTION to the DB driver's bindvar type.
+// Rebinds a query from QUESTION to the DB driver's bindvar type.
 func (db *DB) Rebind(query string) string {
 	return Rebind(BindType(db.driverName), query)
 }
 
-// Unsafe returns a version of DB which will silently succeed to scan when
-// columns in the SQL result have no fields in the destination struct.
-// sqlx.Stmt and sqlx.Tx which are created from this DB will inherit its
-// safety behavior.
-func (db *DB) Unsafe() *DB {
-	return &DB{DB: db.DB, driverName: db.driverName, unsafe: true}
-}
-
-// BindMap binds a query using the DB driver's bindvar type.
+// BindMap's a query using the DB driver's bindvar type.
 func (db *DB) BindMap(query string, argmap map[string]interface{}) (string, []interface{}, error) {
 	return BindMap(BindType(db.driverName), query, argmap)
 }
 
-// BindStruct binds a query using the DB driver's bindvar type.
+// BindStruct's a query using the DB driver's bindvar type.
 func (db *DB) BindStruct(query string, arg interface{}) (string, []interface{}, error) {
 	return BindStruct(BindType(db.driverName), query, arg)
 }
 
 // NamedQueryMap using this DB.
-// DEPRECATED: use NamedQuery instead.
 func (db *DB) NamedQueryMap(query string, argmap map[string]interface{}) (*Rows, error) {
 	return NamedQueryMap(db, query, argmap)
 }
 
 // NamedExecMap using this DB.
-// DEPRECATED: use NamedExec instead
 func (db *DB) NamedExecMap(query string, argmap map[string]interface{}) (sql.Result, error) {
 	return NamedExecMap(db, query, argmap)
 }
@@ -250,7 +187,7 @@ func (db *DB) LoadFile(path string) (*sql.Result, error) {
 	return LoadFile(db, path)
 }
 
-// MustBegin starts a transaction, and panics on error.  Returns an *sqlx.Tx instead
+// Begin starts a transaction, and panics on error.  Returns an *sqlx.Tx instead
 // of an *sql.Tx.
 func (db *DB) MustBegin() *Tx {
 	tx, err := db.Beginx()
@@ -260,28 +197,31 @@ func (db *DB) MustBegin() *Tx {
 	return tx
 }
 
-// Beginx begins a transaction and returns an *sqlx.Tx instead of an *sql.Tx.
+// Same as Begin, but returns an *sqlx.Tx instead of an *sql.Tx.
 func (db *DB) Beginx() (*Tx, error) {
-	tx, err := db.DB.Begin()
-	if err != nil {
+	if tx, err := db.DB.Begin(); err != nil {
 		return nil, err
+	} else {
+		return &Tx{*tx, db.driverName}, err
 	}
-	return &Tx{Tx: tx, driverName: db.driverName, unsafe: db.unsafe}, err
 }
 
-// Queryx queries the database and returns an *sqlx.Rows.
+// Same as Query, but returns an *sqlx.Rows instead of *sql.Rows.
 func (db *DB) Queryx(query string, args ...interface{}) (*Rows, error) {
-	r, err := db.DB.Query(query, args...)
-	if err != nil {
+	if r, err := db.DB.Query(query, args...); err != nil {
 		return nil, err
+	} else {
+		return &Rows{Rows: *r}, err
 	}
-	return &Rows{Rows: *r, unsafe: db.unsafe}, err
 }
 
-// QueryRowx queries the database and returns an *sqlx.Row.
+// Same as QueryRow, but returns an *sqlx.Row instead of *sql.Row.
 func (db *DB) QueryRowx(query string, args ...interface{}) *Row {
-	rows, err := db.DB.Query(query, args...)
-	return &Row{rows: rows, err: err, unsafe: db.unsafe}
+	if r, err := db.DB.Query(query, args...); err != nil {
+		return &Row{err: err}
+	} else {
+		return &Row{rows: *r, err: err}
+	}
 }
 
 // Execv (verbose) runs Execv using this database.
@@ -314,19 +254,13 @@ func (db *DB) Preparex(query string) (*Stmt, error) {
 	return Preparex(db, query)
 }
 
-// PrepareNamed returns an sqlx.NamedStmt
-func (db *DB) PrepareNamed(query string) (*NamedStmt, error) {
-	return prepareNamed(db, query)
-}
-
-// Tx is an sqlx wrapper around database/sql's Tx with extra functionality
+// An sqlx wrapper around database/sql's Tx with extra functionality
 type Tx struct {
-	*sql.Tx
+	sql.Tx
 	driverName string
-	unsafe     bool
 }
 
-// DriverName returns the driverName used by the DB which began this transaction.
+// Return the driverName used by the DB which began a transaction.
 func (tx *Tx) DriverName() string {
 	return tx.driverName
 }
@@ -336,18 +270,12 @@ func (tx *Tx) Rebind(query string) string {
 	return Rebind(BindType(tx.driverName), query)
 }
 
-// Unsafe returns a version of Tx which will silently succeed to scan when
-// columns in the SQL result have no fields in the destination struct.
-func (tx *Tx) Unsafe() *Tx {
-	return &Tx{Tx: tx.Tx, driverName: tx.driverName, unsafe: true}
-}
-
-// BindMap binds a query within a transaction's bindvar type.
+// BindMap's a query within a transaction's bindvar type.
 func (tx *Tx) BindMap(query string, argmap map[string]interface{}) (string, []interface{}, error) {
 	return BindMap(BindType(tx.driverName), query, argmap)
 }
 
-// BindStruct binds a query within a transaction's bindvar type.
+// BindStruct's a query within a transaction's bindvar type.
 func (tx *Tx) BindStruct(query string, arg interface{}) (string, []interface{}, error) {
 	return BindStruct(BindType(tx.driverName), query, arg)
 }
@@ -357,21 +285,9 @@ func (tx *Tx) NamedQuery(query string, arg interface{}) (*Rows, error) {
 	return NamedQuery(tx, query, arg)
 }
 
-// NamedExec a named query within a transaction.
+// Exec a named query within a transaction.
 func (tx *Tx) NamedExec(query string, arg interface{}) (sql.Result, error) {
 	return NamedExec(tx, query, arg)
-}
-
-// NamedQueryMap within a transaction.
-// DEPRECATED: Use NamedQuery instead
-func (tx *Tx) NamedQueryMap(query string, arg map[string]interface{}) (*Rows, error) {
-	return NamedQueryMap(tx, query, arg)
-}
-
-// NamedExecMap a named query within a transaction.
-// DEPRECATED: Use NamedExec instead
-func (tx *Tx) NamedExecMap(query string, arg map[string]interface{}) (sql.Result, error) {
-	return NamedExecMap(tx, query, arg)
 }
 
 // LoadFile within a transaction.
@@ -384,19 +300,22 @@ func (tx *Tx) Select(dest interface{}, query string, args ...interface{}) error 
 	return Select(tx, dest, query, args...)
 }
 
-// Queryx within a transaction.
+// Query within a transaction, returning *sqlx.Rows instead of *sql.Rows.
 func (tx *Tx) Queryx(query string, args ...interface{}) (*Rows, error) {
-	r, err := tx.Tx.Query(query, args...)
-	if err != nil {
+	if r, err := tx.Tx.Query(query, args...); err != nil {
 		return nil, err
+	} else {
+		return &Rows{Rows: *r}, err
 	}
-	return &Rows{Rows: *r, unsafe: tx.unsafe}, err
 }
 
-// QueryRowx within a transaction.
+// QueryRow within a transaction, returning *sqlx.Row instead of *sql.Row.
 func (tx *Tx) QueryRowx(query string, args ...interface{}) *Row {
-	rows, err := tx.Tx.Query(query, args...)
-	return &Row{rows: rows, err: err, unsafe: tx.unsafe}
+	if r, err := tx.Tx.Query(query, args...); err != nil {
+		return &Row{err: err}
+	} else {
+		return &Row{rows: *r, err: err}
+	}
 }
 
 // Get within a transaction.
@@ -434,59 +353,62 @@ func (tx *Tx) Execp(query string, args ...interface{}) sql.Result {
 	return Execp(tx, query, args...)
 }
 
-// MustExec runs MustExec within a transaction.
+// MustExec (panic) runs MustExec within a transaction.
 func (tx *Tx) MustExec(query string, args ...interface{}) sql.Result {
 	return MustExec(tx, query, args...)
 }
 
-// Preparex  a statement within a transaction.
+// Prepare's a statement within a transaction, returning a *sqlx.Stmt instead of an *sql.Stmt.
 func (tx *Tx) Preparex(query string) (*Stmt, error) {
 	return Preparex(tx, query)
 }
 
-// Stmtx returns a version of the prepared statement which runs within a transaction.  Provided
-// stmt can be either *sql.Stmt or *sqlx.Stmt.
+// Returns a version of the prepared statement which runs within a transaction.  Provided
+// stmt can be either *sql.Stmt or *sqlx.Stmt, and the return value is always *sqlx.Stmt.
 func (tx *Tx) Stmtx(stmt interface{}) *Stmt {
 	var st sql.Stmt
 	var s *sql.Stmt
 	switch stmt.(type) {
 	case sql.Stmt:
 		st = stmt.(sql.Stmt)
-		s = &st
 	case Stmt:
-		s = stmt.(Stmt).Stmt
-	case *Stmt:
-		s = stmt.(*Stmt).Stmt
-	case *sql.Stmt:
-		s = stmt.(*sql.Stmt)
+		st = stmt.(Stmt).Stmt
 	}
-	return &Stmt{Stmt: tx.Stmt(s)}
+	s = tx.Stmt(&st)
+	return &Stmt{*s}
 }
 
-// NamedStmt returns a version of the prepared statement which runs within a transaction.
-func (tx *Tx) NamedStmt(stmt *NamedStmt) *NamedStmt {
-	return &NamedStmt{
-		QueryString: stmt.QueryString,
-		Params:      stmt.Params,
-		Stmt:        tx.Stmtx(stmt.Stmt),
+// An sqlx wrapper around database/sql's Stmt with extra functionality
+// Although a Stmt's interface differs from Tx and DB's, internally,
+// a wrapper is used to satisfy the Queryer & Execer interfaces.
+type Stmt struct{ sql.Stmt }
+
+// this unexposed wrapper lets you use a Stmt as a Queryer & Execer by
+// implementing those interfaces but ignoring the `query` argument.
+type qStmt struct{ Stmt }
+
+func (q *qStmt) Query(query string, args ...interface{}) (*sql.Rows, error) {
+	return q.Stmt.Query(args...)
+}
+
+func (q *qStmt) Queryx(query string, args ...interface{}) (*Rows, error) {
+	if r, err := q.Stmt.Query(args...); err != nil {
+		return nil, err
+	} else {
+		return &Rows{Rows: *r}, err
 	}
 }
 
-// PrepareNamed returns an sqlx.NamedStmt
-func (tx *Tx) PrepareNamed(query string) (*NamedStmt, error) {
-	return prepareNamed(tx, query)
+func (q *qStmt) QueryRowx(query string, args ...interface{}) *Row {
+	if r, err := q.Stmt.Query(args...); err != nil {
+		return &Row{err: err}
+	} else {
+		return &Row{rows: *r, err: err}
+	}
 }
 
-// Stmt is an sqlx wrapper around database/sql's Stmt with extra functionality
-type Stmt struct {
-	*sql.Stmt
-	unsafe bool
-}
-
-// Unsafe returns a version of Stmt which will silently succeed to scan when
-// columns in the SQL result have no fields in the destination struct.
-func (s *Stmt) Unsafe() *Stmt {
-	return &Stmt{Stmt: s.Stmt, unsafe: true}
+func (q *qStmt) Exec(query string, args ...interface{}) (sql.Result, error) {
+	return q.Stmt.Exec(args...)
 }
 
 // Select using the prepared statement.
@@ -527,7 +449,7 @@ func (s *Stmt) Execf(args ...interface{}) sql.Result {
 	return Execf(&qStmt{*s}, "", args...)
 }
 
-// Execp (panic) using this statement.  Note that the query portion of the error
+// Execf (panic) using this statement.  Note that the query portion of the error
 // output will be blank, as Stmt does not expose its query.
 func (s *Stmt) Execp(args ...interface{}) sql.Result {
 	return Execp(&qStmt{*s}, "", args...)
@@ -551,72 +473,26 @@ func (s *Stmt) Queryx(args ...interface{}) (*Rows, error) {
 	return qs.Queryx("", args...)
 }
 
-// qStmt is an unexposed wrapper which lets you use a Stmt as a Queryer & Execer by
-// implementing those interfaces and ignoring the `query` argument.
-type qStmt struct{ Stmt }
-
-func (q *qStmt) Query(query string, args ...interface{}) (*sql.Rows, error) {
-	return q.Stmt.Query(args...)
-}
-
-func (q *qStmt) Queryx(query string, args ...interface{}) (*Rows, error) {
-	r, err := q.Stmt.Query(args...)
-	if err != nil {
-		return nil, err
-	}
-	return &Rows{Rows: *r, unsafe: q.Stmt.unsafe}, err
-}
-
-func (q *qStmt) QueryRowx(query string, args ...interface{}) *Row {
-	rows, err := q.Stmt.Query(args...)
-	return &Row{rows: rows, err: err, unsafe: q.Stmt.unsafe}
-}
-
-func (q *qStmt) Exec(query string, args ...interface{}) (sql.Result, error) {
-	return q.Stmt.Exec(args...)
-}
-
-// Rows is a wrapper around sql.Rows which caches costly reflect operations
-// during a looped StructScan
-type Rows struct {
-	sql.Rows
-	started bool
-	fields  []int
-	base    reflect.Type
-	values  []interface{}
-	unsafe  bool
-}
-
-// SliceScan using this Rows.
-func (r *Rows) SliceScan() ([]interface{}, error) {
-	return SliceScan(r)
-}
-
-// MapScan using this Rows.
-func (r *Rows) MapScan(dest map[string]interface{}) error {
-	return MapScan(r, dest)
-}
-
-// StructScan is like sql.Rows.Scan, but scans a single Row into a single Struct.
-// Use this and iterate over Rows manually when the memory load of Select() might be
-// prohibitive.  *Rows.StructScan caches the reflect work of matching up column
-// positions to fields to avoid that overhead per scan, which means it is not safe
-// to run StructScan on the same Rows instance with different struct types.
+// Like sql.Rows.Scan, but scans a single Row into a single Struct.  Use this
+// and iterate over Rows manually when the memory load of Select() might be
+// prohibitive.  *Rows.StructScan caches the reflect work of matching up
+// column positions to fields to avoid that overhead per scan, which means it
+// is not safe to run StructScan on the same Rows instance with different
+// struct types.
 func (r *Rows) StructScan(dest interface{}) error {
 	var v reflect.Value
 	v = reflect.ValueOf(dest)
 	if v.Kind() != reflect.Ptr {
-		return errors.New("must pass a pointer, not a value, to StructScan destination")
+		return errors.New("Must pass a pointer, not a value, to StructScan destination.")
 	}
 	base := reflect.Indirect(v)
-
-	fm, err := getFieldMap(base.Type())
-	if err != nil {
-		return err
-	}
-
+	// see if we have a cached fieldmap
 	if !r.started {
 
+		fm, err := getFieldmap(base.Type())
+		if err != nil {
+			return err
+		}
 		columns, err := r.Columns()
 		if err != nil {
 			return err
@@ -638,18 +514,11 @@ func (r *Rows) StructScan(dest interface{}) error {
 		}
 		r.started = true
 	}
-
-	// create a new struct type (which returns PtrTo) and indirect it
-	err = fm.getValues(reflect.Indirect(v), r.fields, r.values, r.unsafe)
-	if err != nil {
-		return err
+	for i, field := range r.fields {
+		r.values[i] = base.Field(field).Addr().Interface()
 	}
-	// scan into the struct field pointers and append to our results
-	err = r.Scan(r.values...)
-	if err != nil {
-		return err
-	}
-	return r.Err()
+	r.Scan(r.values...)
+	return nil
 }
 
 // Connect to a database and verify with a ping.
@@ -662,7 +531,7 @@ func Connect(driverName, dataSourceName string) (*DB, error) {
 	return db, err
 }
 
-// MustConnect connects to a database and panics on error.
+// Connect, but panic on error.
 func MustConnect(driverName, dataSourceName string) *DB {
 	db, err := Connect(driverName, dataSourceName)
 	if err != nil {
@@ -671,20 +540,19 @@ func MustConnect(driverName, dataSourceName string) *DB {
 	return db
 }
 
-// Preparex prepares a statement.
+// Preparex prepares a statement given a Preparer (Tx, DB), returning an *sqlx.Stmt.
 func Preparex(p Preparer, query string) (*Stmt, error) {
-	s, err := p.Prepare(query)
-	if err != nil {
+	if s, err := p.Prepare(query); err != nil {
 		return nil, err
+	} else {
+		return &Stmt{*s}, err
 	}
-	return &Stmt{Stmt: s, unsafe: isUnsafe(p)}, err
 }
 
-// Select executes a query using the provided Queryer, and StructScans each row
-// into dest, which must be a slice of structs. The *sql.Rows are closed
-// automatically.
+// Query using the provided Queryer, and StructScan each row into dest, which must
+// be a slice of structs.  The resulting *sql.Rows are closed automatically.
 func Select(q Queryer, dest interface{}, query string, args ...interface{}) error {
-	rows, err := q.Queryx(query, args...)
+	rows, err := q.Query(query, args...)
 	if err != nil {
 		return err
 	}
@@ -712,9 +580,8 @@ func Selectf(q Queryer, dest interface{}, query string, args ...interface{}) {
 	}
 }
 
-// Get does a QueryRow using the provided Queryer, and StructScan the resulting
-// row into dest, which must be a pointer to a struct.  If there was no row,
-// Get will return sql.ErrNoRows like row.Scan would.
+// QueryRow using the provided Queryer, and StructScan the resulting row into dest,
+// which must be a pointer to a struct.  If there was no row, Get will return sql.ErrNoRows.
 func Get(q Queryer, dest interface{}, query string, args ...interface{}) error {
 	r := q.QueryRowx(query, args...)
 	return r.StructScan(dest)
@@ -779,7 +646,11 @@ func Execf(e Execer, query string, args ...interface{}) sql.Result {
 
 // Execp (panic) runs Exec on the query and args and panics on error.
 func Execp(e Execer, query string, args ...interface{}) sql.Result {
-	return MustExec(e, query, args...)
+	res, err := e.Exec(query, args...)
+	if err != nil {
+		panic(err)
+	}
+	return res
 }
 
 // MustExec (panic) is an alias for Execp.
@@ -791,30 +662,103 @@ func MustExec(e Execer, query string, args ...interface{}) sql.Result {
 	return res
 }
 
-// SliceScan using this Rows.
-func (r *Row) SliceScan() ([]interface{}, error) {
-	return SliceScan(r)
-}
+// A map of names to field positions for destination structs
+type fieldmap map[string]int
 
-// MapScan using this Rows.
-func (r *Row) MapScan(dest map[string]interface{}) error {
-	return MapScan(r, dest)
-}
+// A cache of fieldmaps for reflect Types
+var fieldmapCache = map[reflect.Type]fieldmap{}
 
-// StructScan a single Row into dest.
-func (r *Row) StructScan(dest interface{}) error {
-	if r.err != nil {
-		return r.err
+// Return the type for a slice, dereferencing it if it is a pointer.  Returns
+// an error if the destination is not a slice or a pointer to a slice.
+func BaseSliceType(t reflect.Type) (reflect.Type, error) {
+start:
+	switch t.Kind() {
+	case reflect.Ptr:
+		t = t.Elem()
+		goto start
+	case reflect.Slice:
+	default:
+		return nil, errors.New("Destination must be a slice.")
 	}
-	defer r.rows.Close()
+	return t, nil
+}
 
+// Return the type of a struct, dereferencing it if it is a pointer.  Returns
+// an error if the destination is not a struct or a pointer to a struct.
+func BaseStructType(t reflect.Type) (reflect.Type, error) {
+	switch t.Kind() {
+	case reflect.Ptr:
+		t = t.Elem()
+		fallthrough
+	case reflect.Struct:
+	default:
+		return nil, errors.New("Destination must be a struct type.")
+	}
+	return t, nil
+}
+
+// Create a fieldmap for a given type and return its fieldmap (or error)
+func getFieldmap(t reflect.Type) (fm fieldmap, err error) {
+	// if we have a fieldmap cached, return it
+	t, err = BaseStructType(t)
+	if err != nil {
+		return nil, err
+	}
+	fm, ok := fieldmapCache[t]
+	if ok {
+		return fm, nil
+	} else {
+		fm = fieldmap{}
+	}
+
+	var f reflect.StructField
+	var name string
+
+	for i := 0; i < t.NumField(); i++ {
+		f = t.Field(i)
+		name = strings.ToLower(f.Name)
+		if tag := f.Tag.Get("db"); tag != "" {
+			name = tag
+		}
+		fm[name] = i
+	}
+	fieldmapCache[t] = fm
+	return fm, nil
+}
+
+// Return the numeric fields corresponding to the columns
+func getFields(fm fieldmap, columns []string) ([]int, error) {
+	var num int
+	var ok bool
+	fields := make([]int, len(columns))
+	for i, name := range columns {
+		// find that name in the struct
+		num, ok = fm[name]
+		if !ok {
+			fmt.Println(fm)
+			return fields, errors.New("Could not find name " + name + " in interface")
+		}
+		fields[i] = num
+	}
+	return fields, nil
+}
+
+// Return a slice of values representing the columns
+// These values are actually pointers into the addresses of struct fields
+// The values interface must be initialized to the length of fields, ie
+// make([]interface{}, len(fields)).
+func setValues(fields []int, vptr reflect.Value, values []interface{}) {
+	for i, field := range fields {
+		values[i] = vptr.Field(field).Addr().Interface()
+	}
+}
+
+// StructScan's a single Row (result of QueryRowx) into dest
+func (r *Row) StructScan(dest interface{}) error {
 	var v reflect.Value
 	v = reflect.ValueOf(dest)
 	if v.Kind() != reflect.Ptr {
-		return errors.New("must pass a pointer, not a value, to StructScan destination")
-	}
-	if v.IsNil() {
-		return errors.New("nil pointer passed to StructScan destination")
+		return errors.New("Must pass a pointer, not a value, to StructScan destination.")
 	}
 
 	direct := reflect.Indirect(v)
@@ -823,7 +767,7 @@ func (r *Row) StructScan(dest interface{}) error {
 		return err
 	}
 
-	fm, err := getFieldMap(base)
+	fm, err := getFieldmap(base)
 	if err != nil {
 		return err
 	}
@@ -833,116 +777,33 @@ func (r *Row) StructScan(dest interface{}) error {
 		return err
 	}
 
-	indexes, err := fm.getFieldIndexes(columns, r.unsafe)
+	fields, err := getFields(fm, columns)
 	if err != nil {
 		return err
 	}
 
 	values := make([]interface{}, len(columns))
 	// create a new struct type (which returns PtrTo) and indirect it
-	err = fm.getValues(reflect.Indirect(v), indexes, values, r.unsafe)
-	if err != nil {
-		return err
-	}
+	setValues(fields, reflect.Indirect(v), values)
 	// scan into the struct field pointers and append to our results
 	return r.Scan(values...)
 }
 
-// SliceScan a row, returning a []interface{} with values similar to MapScan.
-// This function is primarly intended for use where the number of columns
-// is not known.  Because you can pass an []interface{} directly to Scan,
-// it's recommended that you do that as it will not have to allocate new
-// slices per row.
-func SliceScan(r ColScanner) ([]interface{}, error) {
-	// ignore r.started, since we needn't use reflect for anything.
-	columns, err := r.Columns()
-	if err != nil {
-		return []interface{}{}, err
-	}
-
-	values := make([]interface{}, len(columns))
-	for i := range values {
-		values[i] = &sql.NullString{}
-	}
-
-	err = r.Scan(values...)
-
-	if err != nil {
-		return values, err
-	}
-
-	for i := range columns {
-		ns := *(values[i].(*sql.NullString))
-		if ns.Valid {
-			values[i] = ns.String
-		} else {
-			values[i] = nil
-		}
-	}
-
-	return values, r.Err()
-}
-
-// MapScan scans a single Row into the dest map[string]interface{}.
-// Use this to get results for SQL that might not be under your control
-// (for instance, if you're building an interface for an SQL server that
-// executes SQL from input).  Please do not use this as a primary interface!
-// This will modify the map sent to it in place, so do not reuse the same one
-// on different queries or you may end up with something odd!  Columns which
-// occur more than once in the result will overwrite eachother!
+// Fully scan a sql.Rows result into the dest slice.  StructScan destinations MUST
+// have fields that map to every column in the result, and they MAY have fields
+// in addition to those.  Fields are mapped to column names by lowercasing the
+// field names by default:  use the struct tag `db` to specify exact column names
+// for each field.
 //
-// The resultant map values will be string representations of the various
-// SQL datatypes for existing values and a nil for null values.
-func MapScan(r ColScanner, dest map[string]interface{}) error {
-	// ignore r.started, since we needn't use reflect for anything.
-	columns, err := r.Columns()
-	if err != nil {
-		return err
-	}
-
-	values := make([]interface{}, len(columns))
-	for i := range values {
-		values[i] = &sql.NullString{}
-	}
-
-	err = r.Scan(values...)
-	if err != nil {
-		return err
-	}
-
-	for i, column := range columns {
-		ns := *(values[i].(*sql.NullString))
-		if ns.Valid {
-			dest[column] = ns.String
-		} else {
-			dest[column] = nil
-		}
-	}
-
-	return r.Err()
-}
-
-type rowsi interface {
-	Close() error
-	Columns() ([]string, error)
-	Err() error
-	Next() bool
-	Scan(...interface{}) error
-}
-
-// StructScan all rows from an sql.Rows or an sqlx.Rows into the dest slice.
 // StructScan will scan in the entire rows result, so if you need do not want to
 // allocate structs for the entire result, use Queryx and see sqlx.Rows.StructScan.
-func StructScan(rows rowsi, dest interface{}) error {
+func StructScan(rows *sql.Rows, dest interface{}) error {
 	var v, vp reflect.Value
 	var isPtr bool
 
 	value := reflect.ValueOf(dest)
 	if value.Kind() != reflect.Ptr {
-		return errors.New("must pass a pointer, not a value, to StructScan destination")
-	}
-	if value.IsNil() {
-		return errors.New("nil pointer passed to StructScan destination")
+		return errors.New("Must pass a pointer, not a value, to StructScan destination.")
 	}
 
 	direct := reflect.Indirect(value)
@@ -957,7 +818,7 @@ func StructScan(rows rowsi, dest interface{}) error {
 		return err
 	}
 
-	fm, err := getFieldMap(base)
+	fm, err := getFieldmap(base)
 	if err != nil {
 		return err
 	}
@@ -967,30 +828,24 @@ func StructScan(rows rowsi, dest interface{}) error {
 		return err
 	}
 
-	indexes, err := fm.getFieldIndexes(columns, isUnsafe(rows))
+	fields, err := getFields(fm, columns)
 	if err != nil {
 		return err
 	}
-
 	// this will hold interfaces which are pointers to each field in the struct
 	values := make([]interface{}, len(columns))
-
 	for rows.Next() {
 		// create a new struct type (which returns PtrTo) and indirect it
 		vp = reflect.New(base)
 		v = reflect.Indirect(vp)
 
-		err = fm.getValues(v, indexes, values, isUnsafe(rows))
-		if err != nil {
-			return err
-		}
+		setValues(fields, v, values)
 
 		// scan into the struct field pointers and append to our results
 		err = rows.Scan(values...)
 		if err != nil {
 			return err
 		}
-
 		if isPtr {
 			direct.Set(reflect.Append(direct, vp))
 		} else {
@@ -998,5 +853,45 @@ func StructScan(rows rowsi, dest interface{}) error {
 		}
 	}
 
-	return rows.Err()
+	return nil
+}
+
+// Issue a named query using BindStruct to get a query executable
+// by the driver and then run Queryx on the result.  May return an error
+// from the binding or from the execution itself.
+func NamedQuery(e Ext, query string, arg interface{}) (*Rows, error) {
+	q, args, err := e.BindStruct(query, arg)
+	if err != nil {
+		return nil, err
+	}
+	return e.Queryx(q, args...)
+}
+
+// Like NamedQuery, but use Exec instead of Queryx.
+func NamedExec(e Ext, query string, arg interface{}) (sql.Result, error) {
+	q, args, err := e.BindStruct(query, arg)
+	if err != nil {
+		return nil, err
+	}
+	return e.Exec(q, args...)
+}
+
+// Issue a named query using BindMap to get a query executable by the driver
+// and then run Queryx on the result.  May return an error from the binding
+// or from the query execution itself.
+func NamedQueryMap(e Ext, query string, argmap map[string]interface{}) (*Rows, error) {
+	q, args, err := e.BindMap(query, argmap)
+	if err != nil {
+		return nil, err
+	}
+	return e.Queryx(q, args...)
+}
+
+// Like NamedQuery, but use Exec instead of Queryx.
+func NamedExecMap(e Ext, query string, argmap map[string]interface{}) (sql.Result, error) {
+	q, args, err := e.BindMap(query, argmap)
+	if err != nil {
+		return nil, err
+	}
+	return e.Exec(q, args...)
 }

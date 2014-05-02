@@ -116,7 +116,6 @@ func openDB(s *session) (*DB, error) {
 	db.closeWg.Add(2)
 	go db.compaction()
 	go db.writeJournal()
-	db.wakeCompaction(0)
 
 	s.logf("db@open done T·%v", time.Since(start))
 
@@ -128,10 +127,6 @@ func openDB(s *session) (*DB, error) {
 // The DB will be created if not exist, unless ErrorIfMissing is true.
 // Also, if ErrorIfExist is true and the DB exist Open will returns
 // os.ErrExist error.
-//
-// Open will return an error with type of ErrManifest if manifest file
-// is missing or corrupted. Missing or corrupted manifest file can be
-// recovered with Recover function.
 //
 // The DB must be closed after use, by calling Close method.
 func Open(p storage.Storage, o *opt.Options) (db *DB, err error) {
@@ -163,17 +158,12 @@ func Open(p storage.Storage, o *opt.Options) (db *DB, err error) {
 	return openDB(s)
 }
 
-// OpenFile opens or creates a DB for the given path.
+// OpenFile opens or creates a DB for the given path. OpenFile uses standard
+// file-system backed storage implementation as desribed in the leveldb/storage
+// package.
 // The DB will be created if not exist, unless ErrorIfMissing is true.
 // Also, if ErrorIfExist is true and the DB exist OpenFile will returns
 // os.ErrExist error.
-//
-// OpenFile uses standard file-system backed storage implementation as
-// desribed in the leveldb/storage package.
-//
-// OpenFile will return an error with type of ErrManifest if manifest file
-// is missing or corrupted. Missing or corrupted manifest file can be
-// recovered with Recover function.
 //
 // The DB must be closed after use, by calling Close method.
 func OpenFile(path string, o *opt.Options) (db *DB, err error) {
@@ -213,7 +203,6 @@ func Recover(p storage.Storage, o *opt.Options) (db *DB, err error) {
 	if err != nil {
 		return
 	}
-
 	ff := files(ff0)
 	ff.sort()
 
@@ -241,7 +230,7 @@ func Recover(p storage.Storage, o *opt.Options) (db *DB, err error) {
 		}
 
 		t := newTFile(f, uint64(size), nil, nil)
-		iter := s.tops.newIterator(t, nil, nil)
+		iter := s.tops.newIterator(t, nil)
 		// min ikey
 		if iter.First() {
 			t.min = iter.Key()
@@ -276,7 +265,7 @@ func Recover(p storage.Storage, o *opt.Options) (db *DB, err error) {
 	// extract largest seq number from newest table
 	if nt != nil {
 		var lseq uint64
-		iter := s.tops.newIterator(nt, nil, nil)
+		iter := s.tops.newIterator(nt, nil)
 		for iter.Next() {
 			seq, _, ok := iKey(iter.Key()).parseNum()
 			if !ok {
@@ -291,11 +280,7 @@ func Recover(p storage.Storage, o *opt.Options) (db *DB, err error) {
 	}
 
 	// set file num based on largest one
-	if len(ff) > 0 {
-		s.stFileNum = ff[len(ff)-1].Num() + 1
-	} else {
-		s.stFileNum = 0
-	}
+	s.stFileNum = ff[len(ff)-1].Num() + 1
 
 	// create brand new manifest
 	err = s.create()
@@ -308,29 +293,6 @@ func Recover(p storage.Storage, o *opt.Options) (db *DB, err error) {
 		return
 	}
 	return openDB(s)
-}
-
-// RecoverFile recovers and opens a DB with missing or corrupted manifest files
-// for the given path. It will ignore any manifest files, valid or not.
-// The DB must already exist or it will returns an error.
-// Also, Recover will ignore ErrorIfMissing and ErrorIfExist options.
-//
-// RecoverFile uses standard file-system backed storage implementation as desribed
-// in the leveldb/storage package.
-//
-// The DB must be closed after use, by calling Close method.
-func RecoverFile(path string, o *opt.Options) (db *DB, err error) {
-	stor, err := storage.OpenFile(path)
-	if err != nil {
-		return
-	}
-	db, err = Recover(stor, o)
-	if err != nil {
-		stor.Close()
-	} else {
-		db.closer = stor
-	}
-	return
 }
 
 func (d *DB) recoverJournal() error {
@@ -459,23 +421,23 @@ func (d *DB) get(key []byte, seq uint64, ro *opt.ReadOptions) (value []byte, err
 	ucmp := s.cmp.cmp
 	ikey := newIKey(key, seq, tSeek)
 
-	em, fm := d.getMems()
-	for _, m := range [...]*memdb.DB{em, fm} {
-		if m == nil {
-			continue
+	memGet := func(m *memdb.DB) bool {
+		var rkey []byte
+		rkey, value, err = m.Find(ikey)
+		if err != nil {
+			return false
 		}
-		mk, mv, me := m.Find(ikey)
-		if me == nil {
-			ukey, _, t, ok := parseIkey(mk)
-			if ok && ucmp.Compare(ukey, key) == 0 {
-				if t == tDel {
-					return nil, ErrNotFound
-				}
-				return mv, nil
-			}
-		} else if me != ErrNotFound {
-			return nil, me
+		ukey, _, t, ok := parseIkey(rkey)
+		if !ok || ucmp.Compare(ukey, key) != 0 || t == tDel {
+			value = nil
+			err = ErrNotFound
+			return false
 		}
+		return true
+	}
+
+	if mem, frozenMem := d.getMem(); memGet(mem) || (frozenMem != nil && memGet(frozenMem)) {
+		return
 	}
 
 	v := s.version()
@@ -510,22 +472,17 @@ func (d *DB) Get(key []byte, ro *opt.ReadOptions) (value []byte, err error) {
 // underlying DB. The resultant key/value pairs are guaranteed to be
 // consistent.
 //
-// Slice allows slicing the iterator to only contains keys in the given
-// range. A nil Range.Start is treated as a key before all keys in the
-// DB. And a nil Range.Limit is treated as a key after all keys in
-// the DB.
-//
 // The iterator must be released after use, by calling Release method.
 //
 // Also read Iterator documentation of the leveldb/iterator package.
-func (d *DB) NewIterator(slice *util.Range, ro *opt.ReadOptions) iterator.Iterator {
+func (d *DB) NewIterator(ro *opt.ReadOptions) iterator.Iterator {
 	if err := d.ok(); err != nil {
 		return iterator.NewEmptyIterator(err)
 	}
 
 	p := d.newSnapshot()
 	defer p.Release()
-	return p.NewIterator(slice, ro)
+	return p.NewIterator(ro)
 }
 
 // GetSnapshot returns a latest snapshot of the underlying DB. A snapshot
@@ -610,7 +567,7 @@ func (d *DB) GetProperty(name string) (value string, err error) {
 // data compresses by a factor of ten, the returned sizes will be one-tenth
 // the size of the corresponding user data size.
 // The results may not include the sizes of recently written data.
-func (d *DB) GetApproximateSizes(ranges []util.Range) (Sizes, error) {
+func (d *DB) GetApproximateSizes(ranges []Range) (Sizes, error) {
 	if err := d.ok(); err != nil {
 		return nil, err
 	}
@@ -646,10 +603,11 @@ func (d *DB) GetApproximateSizes(ranges []util.Range) (Sizes, error) {
 // needed to access the data. This operation should typically only
 // be invoked by users who understand the underlying implementation.
 //
+//
 // A nil Range.Start is treated as a key before all keys in the DB.
 // And a nil Range.Limit is treated as a key after all keys in the DB.
 // Therefore if both is nil then it will compact entire DB.
-func (d *DB) CompactRange(r util.Range) error {
+func (d *DB) CompactRange(r Range) error {
 	err := d.ok()
 	if err != nil {
 		return err

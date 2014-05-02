@@ -25,7 +25,7 @@
 //
 // Iterate over database content:
 //
-//	iter := db.NewIterator(nil, nil)
+//	iter := db.NewIterator(nil)
 //	for iter.Next() {
 //		// Remember that the contents of the returned slice should not be modified, and
 //		// only valid until the next call to Next.
@@ -36,28 +36,6 @@
 //	iter.Release()
 //	err = iter.Error()
 //	...
-//
-// Seek-then-Iterate:
-//
-// 	iter := db.NewIterator(nil, nil)
-// 	for ok := iter.Seek(key); ok; ok = iter.Next() {
-// 		// Use key/value.
-// 		...
-// 	}
-// 	iter.Release()
-// 	err = iter.Error()
-// 	...
-//
-// Iterate over subset of database content:
-//
-// 	iter := db.NewIterator(&util.Range{Start: []byte("foo"), Limit: []byte("xoo")}, nil)
-// 	for iter.Next() {
-// 		// Use key/value.
-// 		...
-// 	}
-// 	iter.Release()
-// 	err = iter.Error()
-// 	...
 //
 // Batch writes:
 //

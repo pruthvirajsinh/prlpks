@@ -1,0 +1,3 @@
+---
+local_dump: /var/data/sks-dump
+int_data: /var/data/sks_data

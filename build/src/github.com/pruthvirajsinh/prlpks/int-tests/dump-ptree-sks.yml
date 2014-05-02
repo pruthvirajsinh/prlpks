@@ -1,0 +1,6 @@
+---
+- hosts: sks
+  user: root
+  roles:
+    - dump-ptree-common
+    - dump-ptree-sks

@@ -1,0 +1,28 @@
+#!/bin/bash -e
+
+service prlpks stop || true
+
+# Construct a new membership file
+PARTNERS=""
+for member in $(relation-list); do
+	if [ -n "$PARTNERS" ]; then
+		SEP=","
+	else
+		SEP=""
+	fi
+	PARTNERS="$(relation-get private-address $member):11370"$SEP"$PARTNERS"
+done
+
+cat >/etc/prlpks/prlpks.conf.d/03-recon <<EOF
+
+[symflux.recon]
+reconPort=11370
+httpPort=11371
+partners=["$PARTNERS"]
+filters=["yminsky.dedup"]
+
+EOF
+
+cat /etc/prlpks/prlpks.conf.d/* > /etc/prlpks/prlpks.conf
+
+service prlpks start

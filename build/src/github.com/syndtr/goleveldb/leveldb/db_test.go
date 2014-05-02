@@ -24,7 +24,6 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/iterator"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/storage"
-	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
 func tkey(i int) []byte {
@@ -73,6 +72,9 @@ func (h *dbHarness) init(t *testing.T, o *opt.Options) {
 func (h *dbHarness) openDB0() (err error) {
 	h.t.Log("opening DB")
 	h.db, err = Open(h.stor, h.o)
+	if err != nil {
+		return
+	}
 	return
 }
 
@@ -82,15 +84,16 @@ func (h *dbHarness) openDB() {
 	}
 }
 
-func (h *dbHarness) closeDB0() error {
+func (h *dbHarness) closeDB0() {
 	h.t.Log("closing DB")
-	return h.db.Close()
+	err := h.db.Close()
+	if err != nil {
+		h.t.Error("Close: got error: ", err)
+	}
 }
 
 func (h *dbHarness) closeDB() {
-	if err := h.closeDB0(); err != nil {
-		h.t.Error("Close: got error: ", err)
-	}
+	h.closeDB0()
 	h.stor.CloseCheck()
 	runtime.GC()
 }
@@ -224,7 +227,7 @@ func (h *dbHarness) allEntriesFor(key, want string) {
 	ucmp := db.s.cmp.cmp
 
 	ikey := newIKey([]byte(key), kMaxSeq, tVal)
-	iter := db.newRawIterator(nil, nil)
+	iter := db.newRawIterator(new(opt.ReadOptions))
 	if !iter.Seek(ikey) && iter.Error() != nil {
 		t.Error("AllEntries: error during seek, err: ", iter.Error())
 		return
@@ -276,7 +279,7 @@ func (h *dbHarness) getKeyVal(want string) {
 		t.Fatal("GetSnapshot: got error: ", err)
 	}
 	res := ""
-	iter := s.NewIterator(nil, nil)
+	iter := s.NewIterator(new(opt.ReadOptions))
 	for iter.Next() {
 		res += fmt.Sprintf("(%s->%s)", string(iter.Key()), string(iter.Value()))
 	}
@@ -305,7 +308,7 @@ func (h *dbHarness) compactMem() {
 		return
 	}
 
-	if mem := db.getEffectiveMem(); mem.Len() == 0 {
+	if mem, _ := db.getMem(); mem.Len() == 0 {
 		return
 	}
 
@@ -387,7 +390,7 @@ func (h *dbHarness) compactRange(min, max string) {
 	t := h.t
 	db := h.db
 
-	var r util.Range
+	var r Range
 	if min != "" {
 		r.Start = []byte(min)
 	}
@@ -404,7 +407,7 @@ func (h *dbHarness) sizeAssert(start, limit string, low, hi uint64) {
 	t := h.t
 	db := h.db
 
-	s, err := db.GetApproximateSizes([]util.Range{
+	s, err := db.GetApproximateSizes([]Range{
 		{[]byte(start), []byte(limit)},
 	})
 	if err != nil {
@@ -766,7 +769,7 @@ func TestDb_IterMultiWithDelete(t *testing.T) {
 		h.delete("b")
 		h.get("b", false)
 
-		iter := h.db.NewIterator(nil, nil)
+		iter := h.db.NewIterator(new(opt.ReadOptions))
 		iter.Seek([]byte("c"))
 		testKeyVal(t, iter, "c->vc")
 		iter.Prev()
@@ -775,7 +778,7 @@ func TestDb_IterMultiWithDelete(t *testing.T) {
 
 		h.compactMem()
 
-		iter = h.db.NewIterator(nil, nil)
+		iter = h.db.NewIterator(new(opt.ReadOptions))
 		iter.Seek([]byte("c"))
 		testKeyVal(t, iter, "c->vc")
 		iter.Prev()
@@ -791,7 +794,7 @@ func TestDb_IteratorPinsRef(t *testing.T) {
 	h.put("foo", "hello")
 
 	// Get iterator that will yield the current contents of the DB.
-	iter := h.db.NewIterator(nil, nil)
+	iter := h.db.NewIterator(new(opt.ReadOptions))
 
 	// Write to force compactions
 	h.put("foo", "newvalue1")
@@ -1218,41 +1221,6 @@ func TestDb_DeletionMarkers2(t *testing.T) {
 	h.allEntriesFor("foo", "[ ]")
 }
 
-func TestDb_CompactionTableOpenError(t *testing.T) {
-	h := newDbHarnessWopt(t, &opt.Options{MaxOpenFiles: 0})
-	defer h.close()
-
-	im := 10
-	jm := 10
-	for r := 0; r < 2; r++ {
-		for i := 0; i < im; i++ {
-			for j := 0; j < jm; j++ {
-				h.put(fmt.Sprintf("k%d,%d", i, j), fmt.Sprintf("v%d,%d", i, j))
-			}
-			h.compactMem()
-		}
-	}
-
-	if n := h.totalTables(); n != im*2 {
-		t.Errorf("total tables is %d, want %d", n, im)
-	}
-
-	h.stor.SetOpenErr(storage.TypeTable)
-	go h.db.CompactRange(util.Range{})
-	if err := h.db.wakeCompaction(2); err != nil {
-		t.Log("compaction error: ", err)
-	}
-	h.closeDB0()
-	h.openDB()
-	h.stor.SetOpenErr(0)
-
-	for i := 0; i < im; i++ {
-		for j := 0; j < jm; j++ {
-			h.getVal(fmt.Sprintf("k%d,%d", i, j), fmt.Sprintf("v%d,%d", i, j))
-		}
-	}
-}
-
 func TestDb_OverlapInLevel0(t *testing.T) {
 	trun(t, func(h *dbHarness) {
 		if kMaxMemCompactLevel != 2 {
@@ -1424,7 +1392,7 @@ func TestDb_ClosedIsClosed(t *testing.T) {
 		h.put("k", "v")
 		h.getVal("k", "v")
 
-		iter = db.NewIterator(nil, h.ro)
+		iter = db.NewIterator(h.ro)
 		iter.Seek([]byte("k"))
 		testKeyVal(t, iter, "k->v")
 
@@ -1436,7 +1404,7 @@ func TestDb_ClosedIsClosed(t *testing.T) {
 
 		h.getValr(snap, "k", "v")
 
-		iter2 = snap.NewIterator(nil, h.ro)
+		iter2 = snap.NewIterator(h.ro)
 		iter2.Seek([]byte("k"))
 		testKeyVal(t, iter2, "k->v")
 
@@ -1470,10 +1438,10 @@ func TestDb_ClosedIsClosed(t *testing.T) {
 	_, err = db.GetSnapshot()
 	assertErr(t, err, true)
 
-	iter3 := db.NewIterator(nil, h.ro)
+	iter3 := db.NewIterator(h.ro)
 	assertErr(t, iter3.Error(), true)
 
-	iter3 = snap.NewIterator(nil, h.ro)
+	iter3 = snap.NewIterator(h.ro)
 	assertErr(t, iter3.Error(), true)
 
 	assertErr(t, db.Delete([]byte("k"), h.wo), true)
@@ -1481,10 +1449,10 @@ func TestDb_ClosedIsClosed(t *testing.T) {
 	_, err = db.GetProperty("leveldb.stats")
 	assertErr(t, err, true)
 
-	_, err = db.GetApproximateSizes([]util.Range{{[]byte("a"), []byte("z")}})
+	_, err = db.GetApproximateSizes([]Range{{[]byte("a"), []byte("z")}})
 	assertErr(t, err, true)
 
-	assertErr(t, db.CompactRange(util.Range{}), true)
+	assertErr(t, db.CompactRange(Range{}), true)
 
 	assertErr(t, db.Close(), true)
 }
@@ -1725,7 +1693,7 @@ func TestDb_Concurrent2(t *testing.T) {
 		for i := 0; i < n2; i++ {
 			closeWg.Add(1)
 			go func(i int) {
-				it := h.db.NewIterator(nil, nil)
+				it := h.db.NewIterator(nil)
 				var pk []byte
 				for it.Next() {
 					kk := it.Key()
@@ -1811,15 +1779,4 @@ func TestDb_CreateReopenDbOnFile2(t *testing.T) {
 			t.Fatalf("(%d) cannot close db: %s", i, err)
 		}
 	}
-}
-
-func TestDb_DeletionMarkersOnMemdb(t *testing.T) {
-	h := newDbHarness(t)
-	defer h.close()
-
-	h.put("foo", "v1")
-	h.compactMem()
-	h.delete("foo")
-	h.get("foo", false)
-	h.getKeyVal("")
 }

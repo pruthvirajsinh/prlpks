@@ -1,0 +1,29 @@
+#!/bin/sh -e
+
+if [ "$1" = "purge" ]; then
+	# Update rc.d links (Debian Policy Manual, section 9.3.3.1)
+   	update-rc.d prlpks remove
+
+    # Logs have to be removed according to policy.
+    rm -rf /var/log/prlpks
+
+	# Drop prlpks postgres user & database
+	pg_uid=`getent passwd postgres | cut -d ":" -f 3`
+	if test "$pg_uid" && test -x "/usr/bin/dropdb" && test -x "/usr/bin/dropuser"; then
+		su - prlpks -c "dropdb hkp" || true
+		su - postgres -c "dropuser prlpks" || true
+	fi
+
+	# Remove prefix tree
+	rm -f /var/lib/prlpks/recon-ptree
+
+	# Remove the 'prlpks' system user
+	uid=`getent passwd prlpks | cut -d ":" -f 3`
+	if test "$uid"; then
+		deluser --system --remove-home prlpks
+	fi
+fi
+
+#DEBHELPER#
+
+exit 0

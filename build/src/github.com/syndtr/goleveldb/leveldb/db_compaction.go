@@ -81,7 +81,7 @@ func (c *cMem) flush(mem *memdb.DB, level int) error {
 	s := c.s
 
 	// Write memdb to table
-	t, n, err := s.tops.createFrom(mem.NewIterator(nil))
+	t, n, err := s.tops.createFrom(mem.NewIterator())
 	if err != nil {
 		return err
 	}
@@ -147,12 +147,10 @@ func (d *DB) transact(name string, exec, rollback func() error) {
 			panic(x)
 		}
 	}()
-	for n := 0; ; n++ {
+	for {
 		if d.isClosed() {
 			s.logf("%s exiting", name)
 			panic(errTransactExiting)
-		} else if n > 0 {
-			s.logf("%s retrying N·%d", name, n)
 		}
 		err := exec()
 		select {
@@ -262,7 +260,7 @@ func (d *DB) doCompaction(c *compaction, noTrivial bool) {
 			}
 			rec.addTableFile(c.level+1, t)
 			stats[1].write += t.size
-			s.logf("table@build created L%d@%d N·%d S·%s %q:%q", c.level+1, t.file.Num(), tw.tw.EntriesLen(), shortenb(int(t.size)), t.min, t.max)
+			s.logf("table@compaction created L%d@%d N·%d S·%s %q:%q", c.level+1, t.file.Num(), tw.tw.EntriesLen(), shortenb(int(t.size)), t.min, t.max)
 			return nil
 		}
 
@@ -307,7 +305,9 @@ func (d *DB) doCompaction(c *compaction, noTrivial bool) {
 					return
 				}
 				snapSched = true
-				tw = nil
+
+				// create new table but don't check for error now
+				tw, err = s.tops.create()
 			}
 
 			// Scheduled for snapshot, snapshot will used to retry compaction
@@ -319,6 +319,11 @@ func (d *DB) doCompaction(c *compaction, noTrivial bool) {
 				snapIter = i
 				snapDropCnt = dropCnt
 				snapSched = false
+			}
+
+			// defered error checking from above new table creation
+			if err != nil {
+				return
 			}
 
 			if seq, t, ok := key.parseNum(); !ok {
@@ -381,13 +386,8 @@ func (d *DB) doCompaction(c *compaction, noTrivial bool) {
 			}
 		}
 
-		err = iter.Error()
-		if err != nil {
-			return
-		}
-
 		// Finish last table
-		if tw != nil && !tw.empty() {
+		if tw != nil {
 			err = finish()
 			if err != nil {
 				return
@@ -397,7 +397,7 @@ func (d *DB) doCompaction(c *compaction, noTrivial bool) {
 		return
 	}, func() error {
 		for _, r := range rec.addedTables {
-			s.logf("table@build rollback @%d", r.num)
+			s.logf("table@compaction rollback @%d", r.num)
 			f := s.getTableFile(r.num)
 			if err := f.Remove(); err != nil {
 				return err

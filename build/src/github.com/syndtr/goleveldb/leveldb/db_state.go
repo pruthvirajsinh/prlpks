@@ -54,35 +54,33 @@ func (d *DB) newMem() (mem *memdb.DB, err error) {
 	return
 }
 
-// Get all memdbs.
-func (d *DB) getMems() (e *memdb.DB, f *memdb.DB) {
+// Get mem; no barrier.
+func (d *DB) getMemNB() (mem, frozenMem *memdb.DB) {
+	return d.mem, d.frozenMem
+}
+
+// Get mem.
+func (d *DB) getMem() (mem, frozenMem *memdb.DB) {
 	d.memMu.RLock()
 	defer d.memMu.RUnlock()
 	return d.mem, d.frozenMem
 }
 
-// Get frozen memdb.
-func (d *DB) getEffectiveMem() *memdb.DB {
-	d.memMu.RLock()
-	defer d.memMu.RUnlock()
-	return d.mem
-}
-
-// Check whether we has frozen memdb.
+// Check whether we has frozen mem.
 func (d *DB) hasFrozenMem() bool {
 	d.memMu.RLock()
 	defer d.memMu.RUnlock()
 	return d.frozenMem != nil
 }
 
-// Get frozen memdb.
+// Get current frozen mem; assume that frozen mem isn't nil.
 func (d *DB) getFrozenMem() *memdb.DB {
 	d.memMu.RLock()
 	defer d.memMu.RUnlock()
 	return d.frozenMem
 }
 
-// Drop frozen memdb; assume that frozen memdb isn't nil.
+// Drop frozen mem; assume that frozen mem isn't nil.
 func (d *DB) dropFrozenMem() {
 	d.memMu.Lock()
 	d.frozenJournalFile.Remove()

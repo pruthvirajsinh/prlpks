@@ -51,7 +51,7 @@ func (d *DB) flush() (mem *memdb.DB, err error) {
 	flush := func() bool {
 		v := s.version()
 		defer v.release()
-		mem = d.getEffectiveMem()
+		mem, _ = d.getMem()
 		switch {
 		case v.tLen(0) >= kL0_SlowdownWritesTrigger && !delayed:
 			delayed = true

@@ -163,17 +163,9 @@ func (tf tsFile) Open() (r storage.Reader, err error) {
 	if err != nil {
 		return
 	}
-	if ts.emuOpenErr&tf.Type() != 0 {
-		err = errors.New("leveldb.testStorage: emulated open error")
-		return
-	}
 	r, err = tf.File.Open()
 	if err != nil {
-		if ts.ignoreOpenErr&tf.Type() != 0 {
-			ts.t.Logf("I: cannot open file, num=%d type=%v: %v (ignored)", tf.Num(), tf.Type(), err)
-		} else {
-			ts.t.Errorf("E: cannot open file, num=%d type=%v: %v", tf.Num(), tf.Type(), err)
-		}
+		ts.t.Errorf("E: cannot open file, num=%d type=%v: %v", tf.Num(), tf.Type(), err)
 	} else {
 		ts.t.Logf("I: file opened, num=%d type=%v", tf.Num(), tf.Type())
 		ts.opens[tf.x()] = false
@@ -188,10 +180,6 @@ func (tf tsFile) Create() (w storage.Writer, err error) {
 	defer ts.mu.Unlock()
 	err = tf.checkOpen("create")
 	if err != nil {
-		return
-	}
-	if ts.emuCreateErr&tf.Type() != 0 {
-		err = errors.New("leveldb.testStorage: emulated create error")
 		return
 	}
 	w, err = tf.File.Create()
@@ -230,27 +218,12 @@ type testStorage struct {
 	mu   sync.Mutex
 	cond sync.Cond
 	// Open files, true=writer, false=reader
-	opens         map[uint64]bool
-	emuOpenErr    storage.FileType
-	emuCreateErr  storage.FileType
-	emuDelaySync  storage.FileType
-	emuWriteErr   storage.FileType
-	emuSyncErr    storage.FileType
-	ignoreOpenErr storage.FileType
-	readCnt       uint64
-	readCntEn     storage.FileType
-}
-
-func (ts *testStorage) SetOpenErr(t storage.FileType) {
-	ts.mu.Lock()
-	ts.emuOpenErr = t
-	ts.mu.Unlock()
-}
-
-func (ts *testStorage) SetCreateErr(t storage.FileType) {
-	ts.mu.Lock()
-	ts.emuCreateErr = t
-	ts.mu.Unlock()
+	opens        map[uint64]bool
+	emuDelaySync storage.FileType
+	emuWriteErr  storage.FileType
+	emuSyncErr   storage.FileType
+	readCnt      uint64
+	readCntEn    storage.FileType
 }
 
 func (ts *testStorage) DelaySync(t storage.FileType) {
@@ -303,10 +276,6 @@ func (ts *testStorage) countRead(t storage.FileType) {
 		ts.readCnt++
 	}
 	ts.mu.Unlock()
-}
-
-func (ts *testStorage) SetIgnoreOpenErr(t storage.FileType) {
-	ts.ignoreOpenErr = t
 }
 
 func (ts *testStorage) Lock() (r util.Releaser, err error) {

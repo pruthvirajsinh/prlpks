@@ -1,0 +1,20 @@
+#!/bin/bash -e
+
+# Stop SKS
+service sks stop || true
+
+# Backup prior membership file
+if [ -e "/etc/sks/membership" ]; then
+	mv /etc/sks/membership /etc/sks/membership.$(date +%s).sks-charm.bak
+fi
+
+rm -f /var/log/skscharmdebug.log || true
+
+# Construct a new membership file
+for member in $(relation-list); do
+	echo "$(relation-get private-address $member) 11370" >>/etc/sks/membership
+done
+
+# Start SKS
+service sks start
+

@@ -28,13 +28,13 @@ type tFile struct {
 }
 
 // test if key is after t
-func (t *tFile) isAfter(key []byte, ucmp comparer.BasicComparer) bool {
-	return key != nil && ucmp.Compare(key, t.max.ukey()) > 0
+func (t *tFile) isAfter(key []byte, cmp comparer.BasicComparer) bool {
+	return key != nil && cmp.Compare(key, t.max.ukey()) > 0
 }
 
 // test if key is before t
-func (t *tFile) isBefore(key []byte, ucmp comparer.BasicComparer) bool {
-	return key != nil && ucmp.Compare(key, t.min.ukey()) < 0
+func (t *tFile) isBefore(key []byte, cmp comparer.BasicComparer) bool {
+	return key != nil && cmp.Compare(key, t.min.ukey()) < 0
 }
 
 func (t *tFile) incrSeek() int32 {
@@ -73,55 +73,29 @@ func newTFile(file storage.File, size uint64, min, max iKey) *tFile {
 // table files
 type tFiles []*tFile
 
-func (tf tFiles) Len() int      { return len(tf) }
-func (tf tFiles) Swap(i, j int) { tf[i], tf[j] = tf[j], tf[i] }
-
-func (tf tFiles) lessByKey(icmp *iComparer, i, j int) bool {
-	a, b := tf[i], tf[j]
-	n := icmp.Compare(a.min, b.min)
-	if n == 0 {
-		return a.file.Num() < b.file.Num()
-	}
-	return n < 0
-}
-
-func (tf tFiles) lessByNum(i, j int) bool {
-	return tf[i].file.Num() > tf[j].file.Num()
-}
-
-func (tf tFiles) sortByKey(icmp *iComparer) {
-	sort.Sort(&tFilesSortByKey{tFiles: tf, icmp: icmp})
-}
-
-func (tf tFiles) sortByNum() {
-	sort.Sort(&tFilesSortByNum{tFiles: tf})
-}
-
-func (tf tFiles) size() (sum uint64) {
-	for _, t := range tf {
-		sum += t.size
+func (p tFiles) size() (sum uint64) {
+	for _, f := range p {
+		sum += f.size
 	}
 	return sum
 }
 
-func (tf tFiles) searchMin(key iKey, icmp *iComparer) int {
-	return sort.Search(len(tf), func(i int) bool {
-		return icmp.Compare(tf[i].min, key) >= 0
+func (p tFiles) sort(s tFileSorter) {
+	sort.Sort(s.getSorter(p))
+}
+
+func (p tFiles) search(key iKey, cmp *iComparer) int {
+	return sort.Search(len(p), func(i int) bool {
+		return cmp.Compare(p[i].max, key) >= 0
 	})
 }
 
-func (tf tFiles) searchMax(key iKey, icmp *iComparer) int {
-	return sort.Search(len(tf), func(i int) bool {
-		return icmp.Compare(tf[i].max, key) >= 0
-	})
-}
-
-func (tf tFiles) isOverlaps(min, max []byte, disjSorted bool, icmp *iComparer) bool {
-	ucmp := icmp.cmp
+func (p tFiles) isOverlaps(min, max []byte, disjSorted bool, cmp *iComparer) bool {
+	ucmp := cmp.cmp
 
 	if !disjSorted {
 		// Need to check against all files
-		for _, t := range tf {
+		for _, t := range p {
 			if !t.isAfter(min, ucmp) && !t.isBefore(max, ucmp) {
 				return true
 			}
@@ -132,19 +106,19 @@ func (tf tFiles) isOverlaps(min, max []byte, disjSorted bool, icmp *iComparer) b
 	var idx int
 	if len(min) > 0 {
 		// Find the earliest possible internal key for min
-		idx = tf.searchMax(newIKey(min, kMaxSeq, tSeek), icmp)
+		idx = p.search(newIKey(min, kMaxSeq, tSeek), cmp)
 	}
 
-	if idx >= len(tf) {
+	if idx >= len(p) {
 		// beginning of range is after all files, so no overlap
 		return false
 	}
-	return !tf[idx].isBefore(max, ucmp)
+	return !p[idx].isBefore(max, ucmp)
 }
 
-func (tf tFiles) getOverlaps(min, max []byte, r *tFiles, disjSorted bool, ucmp comparer.BasicComparer) {
-	for i := 0; i < len(tf); {
-		t := tf[i]
+func (p tFiles) getOverlaps(min, max []byte, r *tFiles, disjSorted bool, ucmp comparer.BasicComparer) {
+	for i := 0; i < len(p); {
+		t := p[i]
 		i++
 		if t.isAfter(min, ucmp) || t.isBefore(max, ucmp) {
 			continue
@@ -169,16 +143,16 @@ func (tf tFiles) getOverlaps(min, max []byte, r *tFiles, disjSorted bool, ucmp c
 	return
 }
 
-func (tf tFiles) getRange(icmp *iComparer) (min, max iKey) {
-	for i, t := range tf {
+func (p tFiles) getRange(cmp *iComparer) (min, max iKey) {
+	for i, t := range p {
 		if i == 0 {
 			min, max = t.min, t.max
 			continue
 		}
-		if icmp.Compare(t.min, min) < 0 {
+		if cmp.Compare(t.min, min) < 0 {
 			min = t.min
 		}
-		if icmp.Compare(t.max, max) > 0 {
+		if cmp.Compare(t.max, max) > 0 {
 			max = t.max
 		}
 	}
@@ -186,62 +160,135 @@ func (tf tFiles) getRange(icmp *iComparer) (min, max iKey) {
 	return
 }
 
-func (tf tFiles) newIndexIterator(tops *tOps, icmp *iComparer, slice *util.Range, ro *opt.ReadOptions) iterator.IteratorIndexer {
-	if slice != nil {
-		var start, limit int
-		if slice.Start != nil {
-			start = tf.searchMax(iKey(slice.Start), icmp)
-		}
-		if slice.Limit != nil {
-			limit = tf.searchMin(iKey(slice.Limit), icmp)
-		} else {
-			limit = tf.Len()
-		}
-		tf = tf[start:limit]
+func (p tFiles) newIndexIterator(tops *tOps, cmp *iComparer, ro *opt.ReadOptions) *tFilesIter {
+	return &tFilesIter{
+		tops: tops,
+		cmp:  cmp,
+		ro:   ro,
+		tt:   p,
+		pos:  -1,
 	}
-	return iterator.NewArrayIndexer(&tFilesArrayIndexer{
-		tFiles: tf,
-		tops:   tops,
-		icmp:   icmp,
-		slice:  slice,
-		ro:     ro,
-	})
 }
 
-type tFilesArrayIndexer struct {
-	tFiles
-	tops  *tOps
-	icmp  *iComparer
-	slice *util.Range
-	ro    *opt.ReadOptions
+type tFilesIter struct {
+	util.BasicReleaser
+	tops *tOps
+	cmp  *iComparer
+	ro   *opt.ReadOptions
+	tt   tFiles
+	pos  int
 }
 
-func (a *tFilesArrayIndexer) Search(key []byte) int {
-	return a.searchMax(iKey(key), a.icmp)
+func (i *tFilesIter) empty() bool {
+	return len(i.tt) == 0
 }
 
-func (a *tFilesArrayIndexer) Get(i int) iterator.Iterator {
-	if i == 0 || i == a.Len()-1 {
-		return a.tops.newIterator(a.tFiles[i], a.slice, a.ro)
+func (i *tFilesIter) Valid() bool {
+	if i.pos < 0 || i.pos >= len(i.tt) {
+		return false
 	}
-	return a.tops.newIterator(a.tFiles[i], nil, a.ro)
+	return true
 }
 
-type tFilesSortByKey struct {
-	tFiles
-	icmp *iComparer
+func (i *tFilesIter) First() bool {
+	if i.empty() {
+		return false
+	}
+	i.pos = 0
+	return true
 }
 
-func (x *tFilesSortByKey) Less(i, j int) bool {
-	return x.lessByKey(x.icmp, i, j)
+func (i *tFilesIter) Last() bool {
+	if i.empty() {
+		return false
+	}
+	i.pos = len(i.tt) - 1
+	return true
 }
 
-type tFilesSortByNum struct {
-	tFiles
+func (i *tFilesIter) Seek(key []byte) bool {
+	if i.empty() {
+		return false
+	}
+	i.pos = i.tt.search(iKey(key), i.cmp)
+	return i.pos < len(i.tt)
 }
 
-func (x *tFilesSortByNum) Less(i, j int) bool {
-	return x.lessByNum(i, j)
+func (i *tFilesIter) Next() bool {
+	if i.pos >= len(i.tt) {
+		return false
+	}
+	i.pos++
+	return i.pos < len(i.tt)
+}
+
+func (i *tFilesIter) Prev() bool {
+	if i.pos < 0 {
+		return false
+	}
+	i.pos--
+	return i.pos >= 0
+}
+
+func (i *tFilesIter) Get() iterator.Iterator {
+	if i.pos < 0 || i.pos >= len(i.tt) {
+		return nil
+	}
+	return i.tops.newIterator(i.tt[i.pos], i.ro)
+}
+
+func (i *tFilesIter) Error() error {
+	return nil
+}
+
+// table file sorter interface
+type tFileSorter interface {
+	getSorter(ff tFiles) sort.Interface
+}
+
+// sort table files by key
+type tFileSorterKey struct {
+	cmp *iComparer
+	ff  tFiles
+}
+
+func (p *tFileSorterKey) getSorter(ff tFiles) sort.Interface {
+	p.ff = ff
+	return p
+}
+
+func (p *tFileSorterKey) Len() int {
+	return len(p.ff)
+}
+
+func (p *tFileSorterKey) Less(i, j int) bool {
+	a, b := p.ff[i], p.ff[j]
+	n := p.cmp.Compare(a.min, b.min)
+	if n == 0 {
+		return a.file.Num() < b.file.Num()
+	}
+	return n < 0
+}
+
+func (p *tFileSorterKey) Swap(i, j int) {
+	p.ff[i], p.ff[j] = p.ff[j], p.ff[i]
+}
+
+// sort table files by number
+type tFileSorterNewest tFiles
+
+func (p tFileSorterNewest) getSorter(ff tFiles) sort.Interface {
+	return tFileSorterNewest(ff)
+}
+
+func (p tFileSorterNewest) Len() int { return len(p) }
+
+func (p tFileSorterNewest) Less(i, j int) bool {
+	return p[i].file.Num() > p[j].file.Num()
+}
+
+func (p tFileSorterNewest) Swap(i, j int) {
+	p[i], p[j] = p[j], p[i]
 }
 
 // table operations
@@ -349,12 +396,12 @@ func (t *tOps) getApproximateOffset(f *tFile, key []byte) (offset uint64, err er
 	return
 }
 
-func (t *tOps) newIterator(f *tFile, slice *util.Range, ro *opt.ReadOptions) iterator.Iterator {
+func (t *tOps) newIterator(f *tFile, ro *opt.ReadOptions) iterator.Iterator {
 	c, err := t.lookup(f)
 	if err != nil {
 		return iterator.NewEmptyIterator(err)
 	}
-	iter := c.Value().(*table.Reader).NewIterator(slice, ro)
+	iter := c.Value().(*table.Reader).NewIterator(ro)
 	iter.SetReleaser(c)
 	return iter
 }
@@ -393,10 +440,6 @@ func (w *tWriter) add(key, value []byte) error {
 		w.notFirst = true
 	}
 	return w.tw.Append(key, value)
-}
-
-func (w *tWriter) empty() bool {
-	return !w.notFirst
 }
 
 func (w *tWriter) finish() (f *tFile, err error) {

@@ -90,7 +90,7 @@ func fakeConn(content string, prefixLen int) *conn {
 func BenchmarkMockSelectString(b *testing.B) {
 	b.StopTimer()
 	// taken from a recorded run of BenchmarkSelectString
-	// See: http://www.postgresql.org/docs/current/static/protocol-message-formats.html
+	// See: http://www.postgresql.org/docs/9.2/static/protocol-message-formats.html
 	const response = "1\x00\x00\x00\x04" +
 		"t\x00\x00\x00\x06\x00\x00" +
 		"T\x00\x00\x00!\x00\x01?column?\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\xc1\xff\xfe\xff\xff\xff\xff\x00\x00" +
@@ -282,32 +282,27 @@ func benchPreparedMockQuery(b *testing.B, c *conn, stmt driver.Stmt) {
 
 func BenchmarkEncodeInt64(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		encode(&parameterStatus{}, int64(1234), oid.T_int8)
+		encode(int64(1234), oid.T_int8)
 	}
 }
 
 func BenchmarkEncodeFloat64(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		encode(&parameterStatus{}, 3.14159, oid.T_float8)
+		encode(3.14159, oid.T_float8)
 	}
 }
 
 var testByteString = []byte("abcdefghijklmnopqrstuvwxyz")
 
-func BenchmarkEncodeByteaHex(b *testing.B) {
+func BenchmarkEncodeBytea(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		encode(&parameterStatus{serverVersion: 90000}, testByteString, oid.T_bytea)
-	}
-}
-func BenchmarkEncodeByteaEscape(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		encode(&parameterStatus{serverVersion: 84000}, testByteString, oid.T_bytea)
+		encode(testByteString, oid.T_bytea)
 	}
 }
 
 func BenchmarkEncodeBool(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		encode(&parameterStatus{}, true, oid.T_bool)
+		encode(true, oid.T_bool)
 	}
 }
 
@@ -315,7 +310,7 @@ var testTimestamptz = time.Date(2001, time.January, 1, 0, 0, 0, 0, time.Local)
 
 func BenchmarkEncodeTimestamptz(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		encode(&parameterStatus{}, testTimestamptz, oid.T_timestamptz)
+		encode(testTimestamptz, oid.T_timestamptz)
 	}
 }
 
@@ -323,7 +318,7 @@ var testIntBytes = []byte("1234")
 
 func BenchmarkDecodeInt64(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		decode(&parameterStatus{}, testIntBytes, oid.T_int8)
+		decode(testIntBytes, oid.T_int8)
 	}
 }
 
@@ -331,7 +326,7 @@ var testFloatBytes = []byte("3.14159")
 
 func BenchmarkDecodeFloat64(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		decode(&parameterStatus{}, testFloatBytes, oid.T_float8)
+		decode(testFloatBytes, oid.T_float8)
 	}
 }
 
@@ -339,7 +334,7 @@ var testBoolBytes = []byte{'t'}
 
 func BenchmarkDecodeBool(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		decode(&parameterStatus{}, testBoolBytes, oid.T_bool)
+		decode(testBoolBytes, oid.T_bool)
 	}
 }
 
@@ -356,27 +351,6 @@ var testTimestamptzBytes = []byte("2013-09-17 22:15:32.360754-07")
 
 func BenchmarkDecodeTimestamptz(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		decode(&parameterStatus{}, testTimestamptzBytes, oid.T_timestamptz)
-	}
-}
-
-// Stress test the performance of parsing results from the wire.
-func BenchmarkResultParsing(b *testing.B) {
-	b.StopTimer()
-
-	db := openTestConn(b)
-	defer db.Close()
-	_, err := db.Exec("BEGIN")
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
-		res, err := db.Query("SELECT generate_series(1, 50000)")
-		if err != nil {
-			b.Fatal(err)
-		}
-		res.Close()
+		decode(testTimestamptzBytes, oid.T_timestamptz)
 	}
 }

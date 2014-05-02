@@ -272,7 +272,7 @@ func (fs *fileStorage) GetManifest() (f File, err error) {
 	if pend {
 		path := fmt.Sprintf("%s.%d", filepath.Join(fs.path, "CURRENT"), f.Num())
 		if err := rename(path, filepath.Join(fs.path, "CURRENT")); err != nil {
-			fs.log(fmt.Sprintf("CURRENT.%d -> CURRENT: %v", f.Num(), err))
+			fs.log(fmt.Sprintf("CURRENT.%d -> CURRENT: %d", f.Num(), err))
 		}
 	}
 	// Remove obsolete or incomplete pending CURRENT files.
@@ -355,7 +355,7 @@ func (fw fileWrap) Close() error {
 	f.fs.open--
 	err := fw.File.Close()
 	if err != nil {
-		f.fs.log(fmt.Sprintf("close %s.%d: %v", f.Type(), f.Num(), err))
+		f.fs.log(fmt.Sprint("close %s.%d: %v", f.Type(), f.Num(), err))
 	}
 	return err
 }
@@ -378,15 +378,8 @@ func (f *file) Open() (Reader, error) {
 	}
 	of, err := os.OpenFile(f.path(), os.O_RDONLY, 0)
 	if err != nil {
-		if f.hasOldName() && os.IsNotExist(err) {
-			of, err = os.OpenFile(f.oldPath(), os.O_RDONLY, 0)
-			if err == nil {
-				goto ok
-			}
-		}
 		return nil, err
 	}
-ok:
 	f.open = true
 	f.fs.open++
 	return fileWrap{of, f}, nil
@@ -429,32 +422,9 @@ func (f *file) Remove() error {
 	}
 	err := os.Remove(f.path())
 	if err != nil {
-		f.fs.log(fmt.Sprintf("remove %s.%d: %v", f.Type(), f.Num(), err))
-	}
-	// Also try remove file with old name, just in case.
-	if f.hasOldName() {
-		if e1 := os.Remove(f.oldPath()); !os.IsNotExist(e1) {
-			f.fs.log(fmt.Sprintf("remove %s.%d: %v (old name)", f.Type(), f.Num(), err))
-			err = e1
-		}
+		f.fs.log(fmt.Sprint("remove %s.%d: %v", f.Type(), f.Num(), err))
 	}
 	return err
-}
-
-func (f *file) hasOldName() bool {
-	return f.t == TypeTable
-}
-
-func (f *file) oldName() string {
-	switch f.t {
-	case TypeTable:
-		return fmt.Sprintf("%06d.sst", f.num)
-	}
-	return f.name()
-}
-
-func (f *file) oldPath() string {
-	return filepath.Join(f.fs.path, f.oldName())
 }
 
 func (f *file) name() string {
@@ -464,10 +434,11 @@ func (f *file) name() string {
 	case TypeJournal:
 		return fmt.Sprintf("%06d.log", f.num)
 	case TypeTable:
-		return fmt.Sprintf("%06d.ldb", f.num)
+		return fmt.Sprintf("%06d.sst", f.num)
 	default:
 		panic("invalid file type")
 	}
+	return ""
 }
 
 func (f *file) path() string {
@@ -482,7 +453,7 @@ func (f *file) parse(name string) bool {
 		switch tail {
 		case "log":
 			f.t = TypeJournal
-		case "ldb", "sst":
+		case "sst":
 			f.t = TypeTable
 		default:
 			return false
