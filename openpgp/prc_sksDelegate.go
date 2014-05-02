@@ -49,6 +49,8 @@ func DelegateToSKS(searchquery string, toServer string) (keys []*Pubkey, err err
 		defer resp.Body.Close()
 		bodyBuf, errR := ioutil.ReadAll(resp.Body)
 		if errR != nil {
+			log.Println("Delegate: Reading http response body:", errR)
+			err = errR
 			return
 		}
 		body = bytes.NewBuffer(bodyBuf)

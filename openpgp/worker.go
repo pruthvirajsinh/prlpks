@@ -137,29 +137,28 @@ func (w *Worker) Lookup(l *hkp.Lookup) {
 		keys, err = w.LookupHash(l.Search)
 	} else {
 		keys, err = w.LookupKeys(l.Search, limit)
-		if err == ErrKeyNotFound || len(keys) <= 0 {
-			tmpKey, err1 := w.LookupKey(l.Search)
-			if err1 == nil {
-				keys = append(keys, tmpKey)
-			} else {
-				//PRC Start
-				//Delegate to SKS
-				//if len(keys) < 1
-				//Do a Query with 0x
-				if Config().GetBool("authority.delegateToPKS") {
-					sksServer := Config().GetStringDefault("authority.delegateAddress", "pool.sks-keyservers.net:11371")
-					keys, err = DelegateToSKS(l.Search, sksServer)
-					if len(keys) < 1 || err != nil {
-						keys, err = DelegateToSKS("0x"+l.Search, sksServer)
-					}
-					if len(keys) > 0 && err == nil {
-						delegated = true
-					}
+		if err != nil || len(keys) < 1 {
+			//PRC Start
+			errLocal := err
+			//Delegate to SKS
+			//if len(keys) < 1
+			//Do a Query with 0x
+			if Config().GetBool("authority.delegateToPKS") {
+				sksServer := Config().GetStringDefault("authority.delegateAddress", "pool.sks-keyservers.net:11371")
+				keys, err = DelegateToSKS(l.Search, sksServer)
+				if len(keys) < 1 || err != nil {
+					keys, err = DelegateToSKS("0x"+l.Search, sksServer)
 				}
-			}
-			//PRC End
-		}
+				if len(keys) > 0 && err == nil {
+					delegated = true
+				}
+				if err != nil {
+					err = errLocal
+				}
 
+			}
+		}
+		//PRC End
 	}
 	if err != nil {
 		l.Response() <- &ErrorResponse{err}
