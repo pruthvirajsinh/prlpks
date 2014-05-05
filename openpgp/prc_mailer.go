@@ -341,7 +341,9 @@ func processEmails(pksAddr string, msgData Simap.MsgData) (err error) {
 		err = SendEmail(msgData.From, "PKS Add Request Processed", rspMsg)
 
 	} else if strings.ToUpper(msgData.Subject) == "DELETE" {
-		resp, err := http.PostForm(fmt.Sprintf("http://%s/prc/delete", "localhost:11371"), url.Values{"deleteTB": {msgData.Body}})
+		//Send "From" email address for deletion query"
+		resp, err := http.PostForm(fmt.Sprintf("http://%s/prc/delete", "localhost:11371"), url.Values{"deleteTB": {msgData.From}})
+
 		if err != nil {
 			return err
 		}
