@@ -10,11 +10,11 @@ Pre-requisits:
 3. Postgresql Server -- https://wiki.postgresql.org/wiki/Detailed_installation_guides
 
 
-How to install
+How to install:
 
-1.run prlpks_install.sh
-2.the script will output instructions after finishing compiling.
-3.config file is self explanatory and must be configured fully before running.
+1. run prlpks_install.sh
+2. the script will output instructions after finishing compiling.
+3. config file is self explanatory and must be configured fully before running.
 
 
 
